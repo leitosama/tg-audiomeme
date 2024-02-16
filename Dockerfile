@@ -1,8 +1,9 @@
-FROM python:latest
+FROM public.ecr.aws/lambda/python:3.12
 
-WORKDIR /app
-ADD ./requirements.txt /app/requirements.txt
+COPY requirements.txt ${LAMBDA_TASK_ROOT}
+
 RUN pip install -r requirements.txt
-ADD main.py /app/main.py
 
-CMD ["python", "main.py"]
+COPY main.py ${LAMBDA_TASK_ROOT}
+
+CMD [ "main.handler" ]

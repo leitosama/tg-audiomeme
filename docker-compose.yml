@@ -3,5 +3,5 @@ services:
     build: .
     env_file:
       - .env
-    volumes:
-      - ./memes:/app/memes
+    ports:
+      - 9000:8080
