@@ -2,6 +2,7 @@ services:
   bot:
     build: .
     environment:
+      BOT_TOKEN: ${BOT_TOKEN}
       ADMIN_ID: ${ADMIN_ID}
     volumes:
       - ./db:/app/db
