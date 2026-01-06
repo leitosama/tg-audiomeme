@@ -12,7 +12,7 @@ from telebot import types
 # Configuration
 TOKEN = os.environ.get("BOT_TOKEN", "")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
-DB_PATH = os.environ.get("DB_PATH", "audio_meme.db")
+DB_PATH = os.environ.get("DB_PATH", "./db/audio_meme.db")
 
 if not TOKEN:
     logging.error("No BOT_TOKEN env provided")

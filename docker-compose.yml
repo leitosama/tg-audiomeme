@@ -1,7 +1,7 @@
 services:
   bot:
     build: .
-    env_file:
-      - .env
+    environment:
+      ADMIN_ID: ${ADMIN_ID}
     volumes:
-      - ./memes:/app/memes
+      - ./db:/app/db
