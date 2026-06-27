@@ -8,18 +8,6 @@ from pathlib import Path
 import telebot
 from telebot import apihelper, types
 
-
-def _env_bool(name: str, default: bool = False) -> bool:
-    """Read a boolean flag from the environment.
-
-    Treats ``1``, ``true``, ``yes``, ``on`` (case-insensitive) as true.
-    """
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
 # Configuration
 TOKEN = os.environ.get("BOT_TOKEN", "")
 ADMIN_ID = int(os.environ.get("ADMIN_ID") or "0")
@@ -27,7 +15,7 @@ DB_PATH = os.environ.get("DB_PATH", "./db/audio_meme.db")
 TG_API_URL = os.environ.get("TG_API_URL", "")
 # When true, only users with approved=true may use inline queries to send memes.
 # When false, the approved column is ignored and everyone may use the bot.
-REQUIRE_APPROVAL = _env_bool("REQUIRE_APPROVAL")
+REQUIRE_APPROVAL = os.environ.get("REQUIRE_APPROVAL", "false").strip().lower() == "true"
 
 
 # Database functions
