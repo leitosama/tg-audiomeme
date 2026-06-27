@@ -12,11 +12,15 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
+import pytest
+
 import main
 from tests.conftest import ADMIN_ID, USER_ID
 
 Message = Callable[..., SimpleNamespace]
 InlineQuery = Callable[..., SimpleNamespace]
+ChosenInlineResult = Callable[..., SimpleNamespace]
+CallbackQuery = Callable[..., SimpleNamespace]
 
 
 def sent_texts(bot: MagicMock) -> list[str]:
@@ -250,3 +254,130 @@ def test_query_meme_swallows_answer_failure(
     # The handler must log and not propagate the error.
     main.query_meme(make_inline_query())
     env.bot.answer_inline_query.assert_called_once()
+
+
+def test_query_meme_not_personal_when_approval_off(
+    env: SimpleNamespace, make_inline_query: InlineQuery
+) -> None:
+    env.db.add_meme("voicey", "voice-fid", "audio")
+    main.query_meme(make_inline_query(query=""))
+    _, kwargs = env.bot.answer_inline_query.call_args
+    assert kwargs.get("is_personal") is False
+
+
+# --- inline query: approval gate -------------------------------------------
+
+
+def test_query_meme_unapproved_shows_pending_message(
+    env: SimpleNamespace, make_inline_query: InlineQuery, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(main, "REQUIRE_APPROVAL", True)
+    env.db.add_meme("voicey", "voice-fid", "audio")
+
+    main.query_meme(make_inline_query(user_id=USER_ID, first_name="Pending"))
+
+    args, kwargs = env.bot.answer_inline_query.call_args
+    results = args[1]
+    assert len(results) == 1
+    assert type(results[0]).__name__ == "InlineQueryResultArticle"
+    assert results[0].title == main.APPROVAL_PENDING_TEXT
+    assert kwargs.get("is_personal") is True
+    assert kwargs.get("cache_time") == 0
+    # The user is registered (pending) so the admin can approve them.
+    assert env.db.get_all_users() == [(USER_ID, "Pending", False, 0)]
+
+
+def test_query_meme_approved_user_gets_memes(
+    env: SimpleNamespace, make_inline_query: InlineQuery, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(main, "REQUIRE_APPROVAL", True)
+    env.db.add_meme("voicey", "voice-fid", "audio")
+    env.db.register_user(USER_ID, "Approved")
+    env.db.set_user_approved(USER_ID, True)
+
+    main.query_meme(make_inline_query(user_id=USER_ID))
+
+    args, kwargs = env.bot.answer_inline_query.call_args
+    assert len(args[1]) == 1
+    assert type(args[1][0]).__name__ == "InlineQueryResultCachedVoice"
+    assert kwargs.get("is_personal") is True
+    assert kwargs.get("cache_time") == 300
+
+
+# --- chosen inline result (send counting) ----------------------------------
+
+
+def test_count_meme_send_records_usage(
+    env: SimpleNamespace, make_chosen_inline_result: ChosenInlineResult
+) -> None:
+    main.count_meme_send(make_chosen_inline_result(user_id=USER_ID, first_name="Sender"))
+    assert env.db.get_all_users() == [(USER_ID, "Sender", False, 1)]
+
+
+def test_count_meme_send_increments(
+    env: SimpleNamespace, make_chosen_inline_result: ChosenInlineResult
+) -> None:
+    main.count_meme_send(make_chosen_inline_result(user_id=USER_ID, first_name="Sender"))
+    main.count_meme_send(make_chosen_inline_result(user_id=USER_ID, first_name="Renamed"))
+    assert env.db.get_all_users() == [(USER_ID, "Renamed", False, 2)]
+
+
+# --- /users -----------------------------------------------------------------
+
+
+def test_users_rejects_non_admin(env: SimpleNamespace, make_message: Message) -> None:
+    main.list_users(make_message(user_id=USER_ID))
+    assert "Доступно только админу" in sent_texts(env.bot)[0]
+
+
+def test_users_rejects_group_chat(env: SimpleNamespace, make_message: Message) -> None:
+    main.list_users(make_message(user_id=ADMIN_ID, chat_type="group"))
+    assert "личные сообщения" in sent_texts(env.bot)[0]
+
+
+def test_users_empty(env: SimpleNamespace, make_message: Message) -> None:
+    main.list_users(make_message(user_id=ADMIN_ID))
+    assert "Нет пользователей" in sent_texts(env.bot)[0]
+
+
+def test_users_lists_with_buttons(env: SimpleNamespace, make_message: Message) -> None:
+    env.db.register_user(111, "Alice")
+    env.db.record_user_send(222, "Bob")
+    env.db.set_user_approved(222, True)
+
+    main.list_users(make_message(user_id=ADMIN_ID))
+
+    _, kwargs = env.bot.send_message.call_args
+    text = sent_texts(env.bot)[0]
+    assert "Alice" in text and "Bob" in text
+    assert kwargs.get("reply_markup") is not None
+
+
+# --- approve/revoke callbacks ----------------------------------------------
+
+
+def test_on_user_action_rejects_non_admin(
+    env: SimpleNamespace, make_callback_query: CallbackQuery
+) -> None:
+    env.db.register_user(111, "Alice")
+    main.on_user_action(make_callback_query(user_id=USER_ID, data="user:approve:111"))
+    assert env.db.is_user_approved(111) is False
+    env.bot.answer_callback_query.assert_called_once()
+
+
+def test_on_user_action_approves_and_refreshes(
+    env: SimpleNamespace, make_callback_query: CallbackQuery
+) -> None:
+    env.db.register_user(111, "Alice")
+    main.on_user_action(make_callback_query(user_id=ADMIN_ID, data="user:approve:111"))
+
+    assert env.db.is_user_approved(111) is True
+    env.bot.answer_callback_query.assert_called_once()
+    env.bot.edit_message_text.assert_called_once()
+
+
+def test_on_user_action_revokes(env: SimpleNamespace, make_callback_query: CallbackQuery) -> None:
+    env.db.register_user(111, "Alice")
+    env.db.set_user_approved(111, True)
+    main.on_user_action(make_callback_query(user_id=ADMIN_ID, data="user:revoke:111"))
+    assert env.db.is_user_approved(111) is False

@@ -60,3 +60,70 @@ def test_persistence_across_instances(db_path: str) -> None:
     # A new instance pointed at the same file must see the data.
     second = main.AudioMemeDB(db_path)
     assert second.get_meme_by_name("alpha") == (1, "alpha", "file-1", "audio")
+
+
+# --- users -----------------------------------------------------------------
+
+
+def test_register_user_creates_unapproved(db: main.AudioMemeDB) -> None:
+    db.register_user(42, "Alice")
+    assert db.get_all_users() == [(42, "Alice", False, 0)]
+    assert db.is_user_approved(42) is False
+
+
+def test_register_user_refreshes_displayname(db: main.AudioMemeDB) -> None:
+    db.register_user(42, "Alice")
+    db.register_user(42, "Alice Renamed")
+    assert db.get_all_users() == [(42, "Alice Renamed", False, 0)]
+
+
+def test_register_user_preserves_count_and_approval(db: main.AudioMemeDB) -> None:
+    db.record_user_send(42, "Alice")
+    db.set_user_approved(42, True)
+    # Re-registering must not reset count or approval.
+    db.register_user(42, "Alice")
+    assert db.get_all_users() == [(42, "Alice", True, 1)]
+
+
+def test_record_user_send_inserts_with_count_one(db: main.AudioMemeDB) -> None:
+    db.record_user_send(42, "Alice")
+    assert db.get_all_users() == [(42, "Alice", False, 1)]
+
+
+def test_record_user_send_increments_and_refreshes_name(db: main.AudioMemeDB) -> None:
+    db.record_user_send(42, "Alice")
+    db.record_user_send(42, "Alice2")
+    db.record_user_send(42, "Alice3")
+    assert db.get_all_users() == [(42, "Alice3", False, 3)]
+
+
+def test_is_user_approved_unknown_is_false(db: main.AudioMemeDB) -> None:
+    assert db.is_user_approved(999) is False
+
+
+def test_set_user_approved_toggles(db: main.AudioMemeDB) -> None:
+    db.register_user(42, "Alice")
+    assert db.set_user_approved(42, True) is True
+    assert db.is_user_approved(42) is True
+    assert db.set_user_approved(42, False) is True
+    assert db.is_user_approved(42) is False
+
+
+def test_set_user_approved_missing_returns_false(db: main.AudioMemeDB) -> None:
+    assert db.set_user_approved(404, True) is False
+
+
+def test_get_all_users_orders_pending_first_then_count(db: main.AudioMemeDB) -> None:
+    db.record_user_send(1, "low")  # approved, count 1
+    db.set_user_approved(1, True)
+    db.record_user_send(2, "highpending")  # pending, count 1
+    db.record_user_send(2, "highpending")  # pending, count 2
+    db.register_user(3, "zeropending")  # pending, count 0
+
+    order = [row[0] for row in db.get_all_users()]
+    # Pending users first (ordered by count desc), approved users last.
+    assert order == [2, 3, 1]
+
+
+def test_get_all_users_empty(db: main.AudioMemeDB) -> None:
+    assert db.get_all_users() == []

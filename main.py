@@ -13,6 +13,9 @@ TOKEN = os.environ.get("BOT_TOKEN", "")
 ADMIN_ID = int(os.environ.get("ADMIN_ID") or "0")
 DB_PATH = os.environ.get("DB_PATH", "./db/audio_meme.db")
 TG_API_URL = os.environ.get("TG_API_URL", "")
+# When true, only users with approved=true may use inline queries to send memes.
+# When false, the approved column is ignored and everyone may use the bot.
+REQUIRE_APPROVAL = os.environ.get("REQUIRE_APPROVAL") == "true"
 
 
 # Database functions
@@ -43,6 +46,14 @@ class AudioMemeDB:
                 file_id TEXT NOT NULL,
                 media_type TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                userid INTEGER PRIMARY KEY,
+                displayname TEXT,
+                approved INTEGER NOT NULL DEFAULT 0,
+                count INTEGER NOT NULL DEFAULT 0
             )
         """)
         conn.commit()
@@ -95,6 +106,79 @@ class AudioMemeDB:
             return (row[0], row[1], row[2], row[3])
         return None
 
+    # --- Users ---------------------------------------------------------------
+
+    def register_user(self, userid: int, displayname: str) -> None:
+        """Make a user known (e.g. so the admin can approve them).
+
+        Inserts the user if missing and refreshes their displayname, without
+        touching the ``approved`` or ``count`` columns.
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO users (userid, displayname) VALUES (?, ?)
+            ON CONFLICT(userid) DO UPDATE SET displayname = excluded.displayname
+            """,
+            (userid, displayname),
+        )
+        conn.commit()
+        conn.close()
+
+    def record_user_send(self, userid: int, displayname: str) -> None:
+        """Register a meme send: refresh displayname and increment count."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO users (userid, displayname, count) VALUES (?, ?, 1)
+            ON CONFLICT(userid) DO UPDATE SET
+                count = count + 1,
+                displayname = excluded.displayname
+            """,
+            (userid, displayname),
+        )
+        conn.commit()
+        conn.close()
+
+    def is_user_approved(self, userid: int) -> bool:
+        """Return whether the user is approved. Unknown users are not approved."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT approved FROM users WHERE userid = ?", (userid,))
+        row = cursor.fetchone()
+        conn.close()
+        return bool(row[0]) if row else False
+
+    def get_all_users(self) -> list[tuple[int, str, bool, int]]:
+        """Get all users as (userid, displayname, approved, count).
+
+        Pending (unapproved) users come first, then by descending usage count.
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT userid, displayname, approved, count FROM users "
+            "ORDER BY approved ASC, count DESC, userid ASC"
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [(row[0], row[1], bool(row[2]), row[3]) for row in rows]
+
+    def set_user_approved(self, userid: int, approved: bool) -> bool:
+        """Set a user's approved flag. Returns True if a user row was updated."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE users SET approved = ? WHERE userid = ?",
+            (1 if approved else 0, userid),
+        )
+        conn.commit()
+        updated = cursor.rowcount > 0
+        conn.close()
+        return updated
+
 
 # Validate the token only when one is actually provided, so the module stays
 # importable (e.g. in tests) without a real BOT_TOKEN. main() enforces it at runtime.
@@ -109,7 +193,7 @@ def start(message: types.Message) -> None:
     if message.chat.type == "private":
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         if message.from_user.id == ADMIN_ID:
-            markup.add("/add", "/delete", "/list")
+            markup.add("/add", "/delete", "/list", "/users")
             bot.send_message(
                 message.chat.id,
                 "👋 Привет, админ! Выбери действие:",
@@ -383,10 +467,34 @@ def list_memes(message: types.Message) -> None:
     bot.send_message(message.chat.id, text)
 
 
+APPROVAL_PENDING_TEXT = "Ожидайте разрешение администратором"
+
+
 # Inline query handler
 @bot.inline_handler(lambda query: True)
 def query_meme(inline_query: types.InlineQuery) -> None:
     """Handle inline queries to get memes."""
+    user = inline_query.from_user
+
+    # When approval is required, gate access per user. Register the user first so
+    # they show up in the admin's /users list and can be approved.
+    if REQUIRE_APPROVAL:
+        db.register_user(user.id, user.first_name)
+        if not db.is_user_approved(user.id):
+            logging.info(
+                "[inline] User %s (%s) not approved - showing pending message",
+                user.id,
+                user.first_name,
+            )
+            pending = types.InlineQueryResultArticle(
+                "approval-required",
+                APPROVAL_PENDING_TEXT,
+                types.InputTextMessageContent(APPROVAL_PENDING_TEXT),
+            )
+            # cache_time=0 + is_personal so the user sees memes immediately once approved.
+            _answer_inline_query(inline_query, [pending], cache_time=0, is_personal=True)
+            return
+
     memes = db.get_all_memes()
     results: list[types.InlineQueryResultBase] = []
 
@@ -406,21 +514,130 @@ def query_meme(inline_query: types.InlineQuery) -> None:
 
     logging.info(
         "[inline] User %s (%s) queried memes - %d audio, %d video (query: '%s')",
-        inline_query.from_user.id,
-        inline_query.from_user.first_name,
+        user.id,
+        user.first_name,
         audio_count,
         video_count,
         inline_query.query,
     )
 
+    # When approval is on, answers are personal so per-user state never leaks
+    # through Telegram's shared inline cache.
+    _answer_inline_query(inline_query, results, cache_time=300, is_personal=REQUIRE_APPROVAL)
+
+
+def _answer_inline_query(
+    inline_query: types.InlineQuery,
+    results: list[types.InlineQueryResultBase],
+    *,
+    cache_time: int,
+    is_personal: bool,
+) -> None:
+    """Answer an inline query, logging (but swallowing) any Telegram error."""
     try:
-        bot.answer_inline_query(inline_query.id, results, cache_time=300)
+        bot.answer_inline_query(
+            inline_query.id, results, cache_time=cache_time, is_personal=is_personal
+        )
     except Exception as e:
         logging.exception(
             "[inline] Failed to answer inline query from user %s: %s",
             inline_query.from_user.id,
             e,
         )
+
+
+@bot.chosen_inline_handler(func=lambda chosen: True)
+def count_meme_send(chosen: types.ChosenInlineResult) -> None:
+    """Count a meme send: refresh the sender's displayname and increment count.
+
+    Requires inline feedback to be enabled for the bot in BotFather
+    (/setinlinefeedback) so Telegram delivers chosen_inline_result updates.
+    """
+    user = chosen.from_user
+    db.record_user_send(user.id, user.first_name)
+    logging.info(
+        "[chosen] User %s (%s) sent meme (result_id: %s)",
+        user.id,
+        user.first_name,
+        chosen.result_id,
+    )
+
+
+# --- Admin: user management ------------------------------------------------
+
+
+def _render_users(
+    users: list[tuple[int, str, bool, int]],
+) -> tuple[str, types.InlineKeyboardMarkup]:
+    """Build the /users message text and an approve/revoke inline keyboard."""
+    text = "👥 Пользователи:\n"
+    markup = types.InlineKeyboardMarkup()
+    for userid, displayname, approved, count in users:
+        name = displayname or str(userid)
+        status = "✅" if approved else "⏳"
+        text += f"{status} {name} (id {userid}) — {count}\n"
+        if approved:
+            button = types.InlineKeyboardButton(
+                f"🚫 Отозвать {name}", callback_data=f"user:revoke:{userid}"
+            )
+        else:
+            button = types.InlineKeyboardButton(
+                f"✅ Одобрить {name}", callback_data=f"user:approve:{userid}"
+            )
+        markup.add(button)
+    return text, markup
+
+
+@bot.message_handler(commands=["users"])
+def list_users(message: types.Message) -> None:
+    """List users with approve/revoke buttons (admin only)."""
+    logging.info(
+        "[/users] User %s (%s) requested user list",
+        message.from_user.id,
+        message.from_user.first_name,
+    )
+
+    if message.from_user.id != ADMIN_ID:
+        logging.warning("[/users] Non-admin user %s tried to list users", message.from_user.id)
+        bot.send_message(message.chat.id, "❌ Доступно только админу")
+        return
+
+    if message.chat.type != "private":
+        logging.warning("[/users] Admin %s tried /users in group chat", message.from_user.id)
+        bot.send_message(message.chat.id, "❌ Используй личные сообщения")
+        return
+
+    users = db.get_all_users()
+    if not users:
+        bot.send_message(message.chat.id, "Нет пользователей")
+        return
+
+    text, markup = _render_users(users)
+    bot.send_message(message.chat.id, text, reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: bool(call.data) and call.data.startswith("user:"))
+def on_user_action(call: types.CallbackQuery) -> None:
+    """Handle approve/revoke button presses on the /users list (admin only)."""
+    if call.from_user.id != ADMIN_ID:
+        logging.warning("[users] Non-admin user %s tried a user action", call.from_user.id)
+        bot.answer_callback_query(call.id, "❌ Доступно только админу")
+        return
+
+    _, action, userid_str = call.data.split(":")
+    userid = int(userid_str)
+    approved = action == "approve"
+    db.set_user_approved(userid, approved)
+    logging.info("[users] Admin %s set user %s approved=%s", call.from_user.id, userid, approved)
+    bot.answer_callback_query(call.id, "✅ Одобрен" if approved else "🚫 Отозван")
+
+    text, markup = _render_users(db.get_all_users())
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=markup,
+    )
 
 
 def main() -> None:
