@@ -15,7 +15,7 @@ DB_PATH = os.environ.get("DB_PATH", "./db/audio_meme.db")
 TG_API_URL = os.environ.get("TG_API_URL", "")
 # When true, only users with approved=true may use inline queries to send memes.
 # When false, the approved column is ignored and everyone may use the bot.
-REQUIRE_APPROVAL = os.environ.get("REQUIRE_APPROVAL", "false").strip().lower() == "true"
+REQUIRE_APPROVAL = os.environ.get("REQUIRE_APPROVAL") == "true"
 
 
 # Database functions
