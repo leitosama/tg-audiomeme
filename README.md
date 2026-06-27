@@ -22,7 +22,9 @@ A single admin (`ADMIN_ID`) manages memes via direct messages to the bot:
 ### For everyone
 
 - **Inline mode** — type `@botname` in any chat, pick a meme, and the bot sends the
-  saved audio or video.
+  saved audio or video. Results are ordered by all-time popularity (most-sent first).
+- **`@botname stats`** — show the Top-3 most-sent memes of all time.
+- **`@botname userstats`** — show the Top-3 most active users of all time.
 
 ### Optional: user approval
 
@@ -30,8 +32,9 @@ Set `REQUIRE_APPROVAL=true` to gate inline usage behind admin approval. Unapprov
 users see *"Ожидайте разрешение администратором"* instead of memes, and the admin
 approves them with `/users`. When the flag is off (default), anyone may use the bot.
 
-Per-user send counts are tracked whenever a meme is sent. This relies on Telegram
-delivering `chosen_inline_result` updates, so enable inline feedback for the bot in
+Per-user and per-meme send counts are tracked whenever a meme is sent (powering the
+`stats`/`userstats` leaderboards). This relies on Telegram delivering
+`chosen_inline_result` updates, so enable inline feedback for the bot in
 [@BotFather](https://t.me/BotFather) (`/setinlinefeedback`).
 
 ## Quick start (Docker Compose)

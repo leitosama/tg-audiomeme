@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import main
@@ -60,6 +61,68 @@ def test_persistence_across_instances(db_path: str) -> None:
     # A new instance pointed at the same file must see the data.
     second = main.AudioMemeDB(db_path)
     assert second.get_meme_by_name("alpha") == (1, "alpha", "file-1", "audio")
+
+
+def test_migrates_legacy_memes_table_without_count(db_path: str) -> None:
+    # Simulate a pre-existing DB created before the usage counter existed.
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE memes ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, "
+        "file_id TEXT NOT NULL, media_type TEXT NOT NULL, "
+        "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+    )
+    conn.execute("INSERT INTO memes (name, file_id, media_type) VALUES ('old', 'f-old', 'audio')")
+    conn.commit()
+    conn.close()
+
+    # Opening the DB runs init_db, which must add the missing count column.
+    db = main.AudioMemeDB(db_path)
+    meme_id = db.get_meme_by_name("old")[0]  # type: ignore[index]
+    db.increment_meme_count(meme_id)
+    assert db.get_top_memes() == [("old", 1)]
+
+
+# --- meme usage stats ------------------------------------------------------
+
+
+def test_new_meme_starts_with_zero_count(db: main.AudioMemeDB) -> None:
+    db.add_meme("alpha", "file-1", "audio")
+    # A brand new meme has no usage and so never appears in the leaderboard.
+    assert db.get_top_memes() == []
+
+
+def test_increment_meme_count(db: main.AudioMemeDB) -> None:
+    db.add_meme("alpha", "file-1", "audio")
+    meme_id = db.get_meme_by_name("alpha")[0]  # type: ignore[index]
+    db.increment_meme_count(meme_id)
+    db.increment_meme_count(meme_id)
+    assert db.get_top_memes() == [("alpha", 2)]
+
+
+def test_get_memes_by_usage_orders_by_count_then_name(db: main.AudioMemeDB) -> None:
+    db.add_meme("alpha", "f-a", "audio")
+    db.add_meme("beta", "f-b", "video")
+    db.add_meme("gamma", "f-g", "audio")
+    beta_id = db.get_meme_by_name("beta")[0]  # type: ignore[index]
+    db.increment_meme_count(beta_id)
+
+    # beta (count 1) first; alpha/gamma (count 0) follow alphabetically.
+    names = [row[1] for row in db.get_memes_by_usage()]
+    assert names == ["beta", "alpha", "gamma"]
+
+
+def test_get_top_memes_limit_and_excludes_zero(db: main.AudioMemeDB) -> None:
+    for name in ("a", "b", "c", "d"):
+        db.add_meme(name, f"f-{name}", "audio")
+    # a:3, b:2, c:1, d:0
+    for name, hits in (("a", 3), ("b", 2), ("c", 1)):
+        meme_id = db.get_meme_by_name(name)[0]  # type: ignore[index]
+        for _ in range(hits):
+            db.increment_meme_count(meme_id)
+
+    assert db.get_top_memes() == [("a", 3), ("b", 2), ("c", 1)]
+    assert db.get_top_memes(limit=2) == [("a", 3), ("b", 2)]
 
 
 # --- users -----------------------------------------------------------------
@@ -127,3 +190,15 @@ def test_get_all_users_orders_pending_first_then_count(db: main.AudioMemeDB) -> 
 
 def test_get_all_users_empty(db: main.AudioMemeDB) -> None:
     assert db.get_all_users() == []
+
+
+def test_get_top_users_orders_by_count_excludes_zero_and_limits(db: main.AudioMemeDB) -> None:
+    db.register_user(10, "idle")  # count 0 -> excluded
+    for _ in range(3):
+        db.record_user_send(1, "Alice")  # count 3
+    db.record_user_send(2, "Bob")  # count 1
+    for _ in range(2):
+        db.record_user_send(3, "Carol")  # count 2
+
+    assert db.get_top_users() == [("Alice", 3), ("Carol", 2), ("Bob", 1)]
+    assert db.get_top_users(limit=2) == [("Alice", 3), ("Carol", 2)]

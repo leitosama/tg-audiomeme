@@ -265,6 +265,76 @@ def test_query_meme_not_personal_when_approval_off(
     assert kwargs.get("is_personal") is False
 
 
+def test_query_meme_orders_results_by_usage(
+    env: SimpleNamespace, make_inline_query: InlineQuery
+) -> None:
+    env.db.add_meme("rarely", "f-rare", "audio")
+    env.db.add_meme("often", "f-often", "audio")
+    often_id = env.db.get_meme_by_name("often")[0]  # type: ignore[index]
+    env.db.increment_meme_count(often_id)
+
+    main.query_meme(make_inline_query(query=""))
+
+    args, _ = env.bot.answer_inline_query.call_args
+    titles = [r.title for r in args[1]]
+    # Most-used meme comes first.
+    assert titles == ["often", "rarely"]
+
+
+# --- inline query: stats commands ------------------------------------------
+
+
+def _article_text(result: Any) -> str:
+    return str(result.input_message_content.message_text)
+
+
+def test_query_meme_stats_lists_top_memes(
+    env: SimpleNamespace, make_inline_query: InlineQuery
+) -> None:
+    for name in ("a", "b"):
+        env.db.add_meme(name, f"f-{name}", "audio")
+    a_id = env.db.get_meme_by_name("a")[0]  # type: ignore[index]
+    b_id = env.db.get_meme_by_name("b")[0]  # type: ignore[index]
+    env.db.increment_meme_count(a_id)
+    env.db.increment_meme_count(a_id)
+    env.db.increment_meme_count(b_id)
+
+    main.query_meme(make_inline_query(query="stats"))
+
+    args, kwargs = env.bot.answer_inline_query.call_args
+    results = args[1]
+    assert len(results) == 1
+    assert type(results[0]).__name__ == "InlineQueryResultArticle"
+    text = _article_text(results[0])
+    assert "1. a — 2" in text
+    assert "2. b — 1" in text
+    assert kwargs.get("cache_time") == 0
+
+
+def test_query_meme_stats_empty(env: SimpleNamespace, make_inline_query: InlineQuery) -> None:
+    main.query_meme(make_inline_query(query="STATS"))  # case-insensitive
+    args, _ = env.bot.answer_inline_query.call_args
+    assert len(args[1]) == 1
+    assert "Пока нет статистики" in _article_text(args[1][0])
+
+
+def test_query_meme_userstats_lists_top_users(
+    env: SimpleNamespace, make_inline_query: InlineQuery
+) -> None:
+    env.db.record_user_send(1, "Alice")
+    env.db.record_user_send(1, "Alice")
+    env.db.record_user_send(2, "Bob")
+
+    main.query_meme(make_inline_query(query="  userstats  "))  # trimmed
+
+    args, _ = env.bot.answer_inline_query.call_args
+    results = args[1]
+    assert len(results) == 1
+    text = _article_text(results[0])
+    assert "1. Alice — 2" in text
+    assert "2. Bob — 1" in text
+
+
 # --- inline query: approval gate -------------------------------------------
 
 
@@ -320,6 +390,31 @@ def test_count_meme_send_increments(
     main.count_meme_send(make_chosen_inline_result(user_id=USER_ID, first_name="Sender"))
     main.count_meme_send(make_chosen_inline_result(user_id=USER_ID, first_name="Renamed"))
     assert env.db.get_all_users() == [(USER_ID, "Renamed", False, 2)]
+
+
+def test_count_meme_send_increments_meme_count(
+    env: SimpleNamespace, make_chosen_inline_result: ChosenInlineResult
+) -> None:
+    env.db.add_meme("alpha", "f-a", "audio")
+    meme_id = env.db.get_meme_by_name("alpha")[0]  # type: ignore[index]
+
+    main.count_meme_send(
+        make_chosen_inline_result(result_id=str(meme_id), user_id=USER_ID, first_name="Sender")
+    )
+
+    assert env.db.get_top_memes() == [("alpha", 1)]
+    assert env.db.get_all_users() == [(USER_ID, "Sender", False, 1)]
+
+
+def test_count_meme_send_ignores_non_meme_result(
+    env: SimpleNamespace, make_chosen_inline_result: ChosenInlineResult
+) -> None:
+    # Choosing a leaderboard article must not count as a meme send.
+    main.count_meme_send(
+        make_chosen_inline_result(result_id="stats", user_id=USER_ID, first_name="Sender")
+    )
+    assert env.db.get_all_users() == []
+    assert env.db.get_top_memes() == []
 
 
 # --- /users -----------------------------------------------------------------
