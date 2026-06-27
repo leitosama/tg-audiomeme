@@ -3,58 +3,58 @@
 [![CI](https://github.com/leitosama/tg-audiomeme/actions/workflows/ci.yml/badge.svg)](https://github.com/leitosama/tg-audiomeme/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 
-Телеграм-бот — альтернатива Stickers, но для аудио- и видеосообщений.
+A Telegram bot — like Stickers, but for audio and video messages.
 
-## Возможности
+## Features
 
-### Для администратора
+### For the admin
 
-Один администратор (`ADMIN_ID`) управляет мемами в личных сообщениях с ботом:
+A single admin (`ADMIN_ID`) manages memes via direct messages to the bot:
 
-- **`/add`** — добавить аудио или видео в базу:
-  - переслать сообщение с аудио/видео или загрузить файл напрямую;
-  - бот сохраняет Telegram `file_id` для последующего использования.
-- **`/delete`** — удалить сохранённый мем (выбор из списка + подтверждение).
-- **`/list`** — посмотреть все сохранённые мемы.
+- **`/add`** — add an audio or video to the database:
+  - forward a message with audio/video, or upload a file directly;
+  - the bot stores the Telegram `file_id` for later reuse.
+- **`/delete`** — delete a saved meme (pick from a list + confirmation).
+- **`/list`** — view all saved memes.
 
-### Для всех пользователей
+### For everyone
 
-- **Inline-режим** — введи `@botname` в любом чате, выбери мем, и бот отправит
-  сохранённое аудио или видео.
+- **Inline mode** — type `@botname` in any chat, pick a meme, and the bot sends the
+  saved audio or video.
 
-## Быстрый старт (Docker Compose)
+## Quick start (Docker Compose)
 
-По умолчанию `docker-compose.yml` тянет готовый образ из
+By default, `docker-compose.yml` pulls the prebuilt image from
 `ghcr.io/leitosama/tg-audiomeme:latest`.
 
 ```bash
 cp .env.example .env
-# заполни BOT_TOKEN и ADMIN_ID в .env
+# fill in BOT_TOKEN and ADMIN_ID in .env
 docker compose up -d
 ```
 
-Чтобы собрать образ локально вместо загрузки из реестра:
+To build the image locally instead of pulling it from the registry:
 
 ```bash
 docker compose up -d --build
 ```
 
-База данных хранится в томе `./db` на хосте.
+The database is stored in the `./db` volume on the host.
 
-## Переменные окружения
+## Environment variables
 
-| Переменная   | Обязательна | По умолчанию           | Описание                                                        |
-| ------------ | ----------- | ---------------------- | --------------------------------------------------------------- |
-| `BOT_TOKEN`  | да          | —                      | Токен бота от [@BotFather](https://t.me/BotFather).             |
-| `ADMIN_ID`   | да          | —                      | Telegram ID единственного администратора.                       |
-| `DB_PATH`    | нет         | `./db/audio_meme.db`   | Путь к файлу SQLite.                                            |
-| `TG_API_URL` | нет         | —                      | Кастомный endpoint Bot API (напр. локальный Bot API server).    |
+| Variable     | Required | Default                | Description                                                     |
+| ------------ | -------- | ---------------------- | --------------------------------------------------------------- |
+| `BOT_TOKEN`  | yes      | —                      | Bot token from [@BotFather](https://t.me/BotFather).            |
+| `ADMIN_ID`   | yes      | —                      | Telegram ID of the single admin.                                |
+| `DB_PATH`    | no       | `./db/audio_meme.db`   | Path to the SQLite file.                                        |
+| `TG_API_URL` | no       | —                      | Custom Bot API endpoint (e.g. a self-hosted Bot API server).    |
 
-Пример — см. [`.env.example`](.env.example).
+See [`.env.example`](.env.example) for a template.
 
-## Локальная разработка
+## Local development
 
-Требуется Python 3.12+.
+Requires Python 3.12+.
 
 ```bash
 python -m venv .venv
@@ -62,46 +62,46 @@ source .venv/bin/activate
 pip install -r requirements-dev.txt
 ```
 
-Запуск бота (переменные можно передать инлайн):
+Run the bot (variables can be passed inline):
 
 ```bash
 BOT_TOKEN=... ADMIN_ID=... python main.py
 ```
 
-Проверки качества (те же, что и в CI):
+Quality checks (the same ones CI runs):
 
 ```bash
-ruff check .            # линтер
-ruff format --check .   # форматирование
-mypy main.py            # типы (strict, конфиг в pyproject.toml)
-pytest                  # тесты + покрытие
+ruff check .            # linter
+ruff format --check .   # formatting
+mypy main.py            # types (strict, configured in pyproject.toml)
+pytest                  # tests + coverage
 ```
 
 ## CI/CD
 
 GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
 
-- **На каждый push и pull request** запускаются параллельные проверки:
-  `ruff` (линт + формат), `mypy` (strict) и `pytest` (с покрытием).
-- **При пуше в `main`**, после успешного прохождения всех проверок, собирается
-  мультиплатформенный Docker-образ (`linux/amd64`, `linux/arm64`) и публикуется в
-  `ghcr.io/leitosama/tg-audiomeme` с тегами `latest` и `sha-<commit>`.
+- **On every push and pull request**, a single `check` job runs `ruff` (lint + format),
+  `mypy` (strict), and `pytest` (with coverage).
+- **On push to `main`**, after all checks pass, a multi-platform Docker image
+  (`linux/amd64`, `linux/arm64`) is built and published to
+  `ghcr.io/leitosama/tg-audiomeme` with the tags `latest` and `sha-<commit>`.
 
-`main` — это продакшен: нет отдельного staging-окружения и версионирования релизов,
-рабочий код едет в `main` напрямую.
+`main` is production: there is no separate staging environment and no release
+versioning — working code ships straight to `main`.
 
-## База данных
+## Database
 
-Все мемы хранятся в SQLite (по умолчанию `./db/audio_meme.db`).
+All memes are stored in SQLite (`./db/audio_meme.db` by default).
 
-Таблица `memes`:
+The `memes` table:
 
-- `id` — уникальный идентификатор;
-- `name` — название мема;
-- `file_id` — Telegram `file_id` для кэширования;
-- `media_type` — тип: `audio` или `video`;
-- `created_at` — дата добавления.
+- `id` — unique identifier;
+- `name` — meme name;
+- `file_id` — Telegram `file_id` used for caching;
+- `media_type` — type: `audio` or `video`;
+- `created_at` — date added.
 
-## Лицензия
+## License
 
-См. [LICENSE](LICENSE).
+See [LICENSE](LICENSE).
