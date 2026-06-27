@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  lint:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,37 +18,19 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-dev.txt
       - run: pip install -r requirements-dev.txt
-      - run: ruff check .
-      - run: ruff format --check .
+      - name: Lint
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: Typecheck
+        run: mypy main.py
+      - name: Test
+        run: pytest
 
-  typecheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: requirements-dev.txt
-      - run: pip install -r requirements-dev.txt
-      - run: mypy main.py
-
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: requirements-dev.txt
-      - run: pip install -r requirements-dev.txt
-      - run: pytest
-
-  # Build and publish the multi-arch image only after all checks pass, and only
-  # for pushes to main (main is production; no staging/release versioning).
+  # Build and publish the multi-arch image only after checks pass, and only for
+  # pushes to main (main is production; no staging/release versioning).
   build:
-    needs: [lint, typecheck, test]
+    needs: [check]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
