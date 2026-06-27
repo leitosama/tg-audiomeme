@@ -12,17 +12,22 @@ A Telegram bot — like Stickers, but for audio and video messages.
 A single admin (`ADMIN_ID`) manages memes via direct messages to the bot:
 
 - **`/add`** — add an audio or video to the database:
-  - forward a message with audio/video, or upload a file directly;
-  - the bot stores the Telegram `file_id` for later reuse.
-- **`/delete`** — delete a saved meme (pick from a list + confirmation).
-- **`/list`** — view all saved memes.
+  - first forward/upload the media, then give it a **name** (any text) and an
+    optional **emoji**;
+  - the bot stores the Telegram `file_id` for later reuse;
+  - send `/cancel` (or tap **❌ Отмена**) at any step to abort, and `/skip` to
+    leave the emoji empty.
+- **`/list`** — the management hub: tap a meme to **rename** it, change its
+  **emoji**, or **delete** it (with an inline confirmation and a media preview).
+  Each meme shows its all-time send count. (`/delete` opens the same hub.)
 - **`/users`** — list users with their usage count and approve/revoke them via
   inline buttons (relevant when `REQUIRE_APPROVAL` is on).
 
 ### For everyone
 
 - **Inline mode** — type `@botname` in any chat, pick a meme, and the bot sends the
-  saved audio or video. Results are ordered by all-time popularity (most-sent first).
+  saved audio or video. Type text after the mention to **search by name or emoji**;
+  with no text, results are ordered by all-time popularity (most-sent first).
 - **`@botname stats`** — show the Top-3 most-sent memes of all time.
 - **`@botname userstats`** — show the Top-3 most active users of all time.
 
@@ -113,9 +118,11 @@ All memes are stored in SQLite (`./db/audio_meme.db` by default).
 The `memes` table:
 
 - `id` — unique identifier;
-- `name` — meme name;
+- `name` — meme name (any text, unique);
 - `file_id` — Telegram `file_id` used for caching;
 - `media_type` — type: `audio` or `video`;
+- `emoji` — optional emoji shown in the inline results and the admin list;
+- `count` — all-time number of times the meme has been sent;
 - `created_at` — date added.
 
 The `users` table:
