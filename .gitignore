@@ -1,6 +1,10 @@
 # User specific
 *.mp3
 
+# SQLite database files
+*.db
+/db/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

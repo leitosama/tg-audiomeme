@@ -1,0 +1,35 @@
+[project]
+name = "tg-audiomeme"
+version = "0.1.0"
+description = "Telegram bot — alternative to Stickers, but for audio and video memes."
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+# pyTelegramBotAPI ships dynamic, largely untyped decorators (`@bot.message_handler`),
+# so the decorator-strictness check is impractical here.
+disallow_untyped_decorators = false
+
+[[tool.mypy.overrides]]
+# Treat telebot as an untyped dependency so type checking is consistent
+# regardless of whether its (partial) inline types resolve in a given env.
+module = "telebot.*"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "--cov=main --cov-report=term-missing --cov-fail-under=80"
+
+[tool.coverage.run]
+source = ["main"]
+omit = ["tests/*"]

@@ -1,8 +1,12 @@
 services:
   bot:
+    # Default policy: pull the published image. Rebuild locally with `--build`.
+    image: ghcr.io/leitosama/tg-audiomeme:latest
     build: .
+    restart: unless-stopped
     environment:
       BOT_TOKEN: ${BOT_TOKEN}
       ADMIN_ID: ${ADMIN_ID}
+      TG_API_URL: ${TG_API_URL:-}
     volumes:
       - ./db:/app/db
