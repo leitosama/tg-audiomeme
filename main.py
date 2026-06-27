@@ -45,6 +45,7 @@ class AudioMemeDB:
                 name TEXT UNIQUE NOT NULL,
                 file_id TEXT NOT NULL,
                 media_type TEXT NOT NULL,
+                count INTEGER NOT NULL DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -56,6 +57,10 @@ class AudioMemeDB:
                 count INTEGER NOT NULL DEFAULT 0
             )
         """)
+        # Migration: add the usage counter to already-deployed meme tables.
+        cursor.execute("PRAGMA table_info(memes)")
+        if "count" not in {row["name"] for row in cursor.fetchall()}:
+            cursor.execute("ALTER TABLE memes ADD COLUMN count INTEGER NOT NULL DEFAULT 0")
         conn.commit()
         conn.close()
 
@@ -105,6 +110,37 @@ class AudioMemeDB:
         if row:
             return (row[0], row[1], row[2], row[3])
         return None
+
+    def get_memes_by_usage(self) -> list[tuple[int, str, str, str]]:
+        """Get all memes ordered by usage. Returns (id, name, file_id, media_type)."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, name, file_id, media_type FROM memes ORDER BY count DESC, name ASC"
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [(row[0], row[1], row[2], row[3]) for row in rows]
+
+    def increment_meme_count(self, meme_id: int) -> None:
+        """Increment a meme's all-time usage counter."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE memes SET count = count + 1 WHERE id = ?", (meme_id,))
+        conn.commit()
+        conn.close()
+
+    def get_top_memes(self, limit: int = 3) -> list[tuple[str, int]]:
+        """Get the most-used memes as (name, count), excluding never-used ones."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name, count FROM memes WHERE count > 0 ORDER BY count DESC, name ASC LIMIT ?",
+            (limit,),
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [(row[0], row[1]) for row in rows]
 
     # --- Users ---------------------------------------------------------------
 
@@ -165,6 +201,19 @@ class AudioMemeDB:
         rows = cursor.fetchall()
         conn.close()
         return [(row[0], row[1], bool(row[2]), row[3]) for row in rows]
+
+    def get_top_users(self, limit: int = 3) -> list[tuple[str, int]]:
+        """Get the most active users as (displayname, count), excluding inactive ones."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT displayname, count FROM users WHERE count > 0 "
+            "ORDER BY count DESC, userid ASC LIMIT ?",
+            (limit,),
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [(row[0], row[1]) for row in rows]
 
     def set_user_approved(self, userid: int, approved: bool) -> bool:
         """Set a user's approved flag. Returns True if a user row was updated."""
@@ -495,7 +544,20 @@ def query_meme(inline_query: types.InlineQuery) -> None:
             _answer_inline_query(inline_query, [pending], cache_time=0, is_personal=True)
             return
 
-    memes = db.get_all_memes()
+    # Special leaderboard commands, e.g. "@botname stats" / "@botname userstats".
+    command = inline_query.query.strip().lower()
+    if command == "stats":
+        article = _stats_article("stats", "🏆 Топ-3 мемов:", db.get_top_memes())
+        logging.info("[inline] User %s (%s) requested meme stats", user.id, user.first_name)
+        _answer_inline_query(inline_query, [article], cache_time=0, is_personal=REQUIRE_APPROVAL)
+        return
+    if command == "userstats":
+        article = _stats_article("userstats", "🏆 Топ-3 пользователей:", db.get_top_users())
+        logging.info("[inline] User %s (%s) requested user stats", user.id, user.first_name)
+        _answer_inline_query(inline_query, [article], cache_time=0, is_personal=REQUIRE_APPROVAL)
+        return
+
+    memes = db.get_memes_by_usage()
     results: list[types.InlineQueryResultBase] = []
 
     audio_count = 0
@@ -546,15 +608,48 @@ def _answer_inline_query(
         )
 
 
+def _stats_article(
+    result_id: str, header: str, rows: list[tuple[str, int]]
+) -> types.InlineQueryResultArticle:
+    """Build a non-sendable leaderboard article from (label, count) rows."""
+    if rows:
+        body = (
+            header
+            + "\n"
+            + "\n".join(f"{i}. {label} — {count}" for i, (label, count) in enumerate(rows, 1))
+        )
+    else:
+        body = "Пока нет статистики"
+    return types.InlineQueryResultArticle(
+        result_id,
+        header,
+        types.InputTextMessageContent(body),
+        description=body,
+    )
+
+
 @bot.chosen_inline_handler(func=lambda chosen: True)
 def count_meme_send(chosen: types.ChosenInlineResult) -> None:
-    """Count a meme send: refresh the sender's displayname and increment count.
+    """Count a meme send: refresh the sender's displayname and bump usage counters.
+
+    Only numeric ``result_id``s map to memes; leaderboard articles (``stats`` /
+    ``userstats``) and the approval notice are skipped so they don't inflate counts.
 
     Requires inline feedback to be enabled for the bot in BotFather
     (/setinlinefeedback) so Telegram delivers chosen_inline_result updates.
     """
     user = chosen.from_user
+    if not chosen.result_id.isdigit():
+        logging.info(
+            "[chosen] User %s (%s) chose non-meme result (result_id: %s)",
+            user.id,
+            user.first_name,
+            chosen.result_id,
+        )
+        return
+
     db.record_user_send(user.id, user.first_name)
+    db.increment_meme_count(int(chosen.result_id))
     logging.info(
         "[chosen] User %s (%s) sent meme (result_id: %s)",
         user.id,
