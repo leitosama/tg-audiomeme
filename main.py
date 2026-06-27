@@ -752,6 +752,9 @@ def main() -> None:
     if TG_API_URL:
         logging.info("Using custom Telegram API URL")
         apihelper.API_URL = TG_API_URL
+        # Route file downloads through the same server; default FILE_URL points
+        # to api.telegram.org directly, bypassing TG_API_URL entirely.
+        apihelper.FILE_URL = TG_API_URL.replace("/bot{0}/{1}", "/file/bot{0}/{1}")
 
     logging.info("Starting bot...")
     bot.infinity_polling()
