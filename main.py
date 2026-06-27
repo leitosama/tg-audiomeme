@@ -1,49 +1,39 @@
 import logging
 import os
-import sys
 import sqlite3
+import sys
 import tempfile
 from pathlib import Path
-from typing import Optional, List, Tuple
 
 import telebot
-from telebot import types
+from telebot import apihelper, types
 
 # Configuration
 TOKEN = os.environ.get("BOT_TOKEN", "")
-ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
+ADMIN_ID = int(os.environ.get("ADMIN_ID") or "0")
 DB_PATH = os.environ.get("DB_PATH", "./db/audio_meme.db")
-
-if not TOKEN:
-    logging.error("No BOT_TOKEN env provided")
-    sys.exit(1)
-
-if not ADMIN_ID or ADMIN_ID == 0:
-    logging.error("No ADMIN_ID env provided")
-    sys.exit(1)
-
-# Setup logging
-logging.basicConfig(level=logging.DEBUG)
-
-bot = telebot.TeleBot(TOKEN)
+TG_API_URL = os.environ.get("TG_API_URL", "")
 
 
 # Database functions
 class AudioMemeDB:
     """SQLite database for audio/video memes."""
-    
-    def __init__(self, db_path: str):
+
+    def __init__(self, db_path: str) -> None:
         self.db_path = db_path
         self.init_db()
-    
-    def get_connection(self):
+
+    def get_connection(self) -> sqlite3.Connection:
         """Get database connection."""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
-    
-    def init_db(self):
+
+    def init_db(self) -> None:
         """Initialize database schema."""
+        # Ensure the parent directory exists so the DB file can be created.
+        if self.db_path != ":memory:":
+            Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
@@ -57,7 +47,7 @@ class AudioMemeDB:
         """)
         conn.commit()
         conn.close()
-    
+
     def add_meme(self, name: str, file_id: str, media_type: str) -> bool:
         """Add a new meme. Returns True if successful."""
         conn = self.get_connection()
@@ -65,16 +55,16 @@ class AudioMemeDB:
             cursor = conn.cursor()
             cursor.execute(
                 "INSERT INTO memes (name, file_id, media_type) VALUES (?, ?, ?)",
-                (name, file_id, media_type)
+                (name, file_id, media_type),
             )
             conn.commit()
             conn.close()
             return True
         except sqlite3.IntegrityError:
-            logging.warning(f"Meme with name '{name}' already exists")
+            logging.warning("Meme with name '%s' already exists", name)
             conn.close()
             return False
-    
+
     def delete_meme(self, name: str) -> bool:
         """Delete a meme by name. Returns True if successful."""
         conn = self.get_connection()
@@ -84,8 +74,8 @@ class AudioMemeDB:
         deleted = cursor.rowcount > 0
         conn.close()
         return deleted
-    
-    def get_all_memes(self) -> List[Tuple[int, str, str, str]]:
+
+    def get_all_memes(self) -> list[tuple[int, str, str, str]]:
         """Get all memes. Returns list of (id, name, file_id, media_type)."""
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -93,8 +83,8 @@ class AudioMemeDB:
         rows = cursor.fetchall()
         conn.close()
         return [(row[0], row[1], row[2], row[3]) for row in rows]
-    
-    def get_meme_by_name(self, name: str) -> Optional[Tuple[int, str, str, str]]:
+
+    def get_meme_by_name(self, name: str) -> tuple[int, str, str, str] | None:
         """Get meme by name. Returns (id, name, file_id, media_type) or None."""
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -106,12 +96,15 @@ class AudioMemeDB:
         return None
 
 
+# Validate the token only when one is actually provided, so the module stays
+# importable (e.g. in tests) without a real BOT_TOKEN. main() enforces it at runtime.
+bot = telebot.TeleBot(TOKEN, validate_token=bool(TOKEN))
 db = AudioMemeDB(DB_PATH)
 
 
 # Admin commands
 @bot.message_handler(commands=["start"])
-def start(message):
+def start(message: types.Message) -> None:
     """Start command."""
     if message.chat.type == "private":
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -120,75 +113,90 @@ def start(message):
             bot.send_message(
                 message.chat.id,
                 "👋 Привет, админ! Выбери действие:",
-                reply_markup=markup
+                reply_markup=markup,
             )
         else:
             bot.send_message(
                 message.chat.id,
-                "👋 Привет! Для получения мемов используй inline query: введи @ботname в любом чате и выбери мем"
+                "👋 Привет! Для получения мемов используй inline query: "
+                "введи @ботname в любом чате и выбери мем",
             )
     else:
         bot.send_message(
             message.chat.id,
-            "👋 Привет! Для получения мемов используй inline query: введи @ботname в этом чате и выбери мем"
+            "👋 Привет! Для получения мемов используй inline query: "
+            "введи @ботname в этом чате и выбери мем",
         )
 
 
 @bot.message_handler(commands=["add"])
-def add_meme_start(message):
+def add_meme_start(message: types.Message) -> None:
     """Start adding a new meme (admin only)."""
-    logging.info("[/add] User %s (%s) started adding meme", message.from_user.id, message.from_user.first_name)
-    
+    logging.info(
+        "[/add] User %s (%s) started adding meme",
+        message.from_user.id,
+        message.from_user.first_name,
+    )
+
     if message.from_user.id != ADMIN_ID:
         logging.warning("[/add] Non-admin user %s tried to add meme", message.from_user.id)
         bot.send_message(message.chat.id, "❌ Доступно только админу")
         return
-    
+
     if message.chat.type != "private":
         logging.warning("[/add] Admin %s tried /add in group chat", message.from_user.id)
         bot.send_message(message.chat.id, "❌ Используй личные сообщения")
         return
-    
+
     msg = bot.send_message(
         message.chat.id,
-        "Введи название мема (латиница, цифры, подчеркивание):"
+        "Введи название мема (латиница, цифры, подчеркивание):",
     )
     bot.register_next_step_handler(msg, add_meme_get_media)
 
 
-def add_meme_get_media(message):
+def add_meme_get_media(message: types.Message) -> None:
     """Get meme name and wait for media."""
     # Check if message is text
     if not message.text:
-        msg = bot.send_message(message.chat.id, "❌ Пожалуйста, пришли текстовое сообщение с названием мема:")
+        msg = bot.send_message(
+            message.chat.id,
+            "❌ Пожалуйста, пришли текстовое сообщение с названием мема:",
+        )
         bot.register_next_step_handler(msg, add_meme_get_media)
         return
-    
+
     name = message.text.strip()
-    
+
     # Validate name
     if not name or len(name) > 50:
-        msg = bot.send_message(message.chat.id, "❌ Название слишком длинное (максимум 50 символов). Попробуй снова:")
+        msg = bot.send_message(
+            message.chat.id,
+            "❌ Название слишком длинное (максимум 50 символов). Попробуй снова:",
+        )
         bot.register_next_step_handler(msg, add_meme_get_media)
         return
-    
+
     if not all(c.isalnum() or c == "_" for c in name):
-        msg = bot.send_message(message.chat.id, "❌ Используй только латиницу, цифры и подчеркивание. Попробуй снова:")
+        msg = bot.send_message(
+            message.chat.id,
+            "❌ Используй только латиницу, цифры и подчеркивание. Попробуй снова:",
+        )
         bot.register_next_step_handler(msg, add_meme_get_media)
         return
-    
+
     bot.send_message(
         message.chat.id,
-        "Теперь пришли аудио или видео (пересланное сообщение или загруженный файл)"
+        "Теперь пришли аудио или видео (пересланное сообщение или загруженный файл)",
     )
     bot.register_next_step_handler(message, add_meme_save, name)
 
 
-def add_meme_save(message, name):
+def add_meme_save(message: types.Message, name: str) -> None:
     """Save meme, auto-detecting media type."""
     file_id = None
     media_type = None
-    
+
     # Check for voice messages and audio files
     if message.voice:
         file_id = message.voice.file_id
@@ -207,178 +215,236 @@ def add_meme_save(message, name):
             # Download file
             file_info = bot.get_file(message.video.file_id)
             if not file_info.file_path:
-                raise Exception("Failed to get file path")
-            
+                raise RuntimeError("Failed to get file path")
+
             downloaded_file = bot.download_file(file_info.file_path)
-            
+
             # Create temporary file
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
                 tmp.write(downloaded_file)
                 tmp_path = tmp.name
-            
+
             # Send as video note using InputFile
-            with open(tmp_path, 'rb') as video_file:
+            with open(tmp_path, "rb") as video_file:
                 video_note = bot.send_video_note(message.chat.id, types.InputFile(video_file))
-            
+
             # Clean up temp file
             Path(tmp_path).unlink(missing_ok=True)
-            
+
             if video_note and video_note.video_note:
                 file_id = video_note.video_note.file_id
                 media_type = "video"
             else:
-                raise Exception("Failed to get video_note from response")
+                raise RuntimeError("Failed to get video_note from response")
         except Exception as e:
             logging.exception("Failed to cache video: %s", e)
             bot.send_message(message.chat.id, "❌ Ошибка при кэшировании видео. Попробуй снова")
             bot.register_next_step_handler(message, add_meme_save, name)
             return
-    
+
     if not file_id or not media_type:
         msg = bot.send_message(message.chat.id, "❌ Это не аудио и не видео. Попробуй снова")
         bot.register_next_step_handler(msg, add_meme_save, name)
         return
-    
+
     if db.add_meme(name, file_id, media_type):
         icon = "🎵" if media_type == "audio" else "🎬"
-        source = "voice" if message.voice else ("audio_file" if message.audio else ("video_note" if message.video_note else "video_file"))
-        logging.info("[/add] Admin %s added meme '%s' (type: %s, source: %s)", message.from_user.id, name, media_type, source)
+        if message.voice:
+            source = "voice"
+        elif message.audio:
+            source = "audio_file"
+        elif message.video_note:
+            source = "video_note"
+        else:
+            source = "video_file"
+        logging.info(
+            "[/add] Admin %s added meme '%s' (type: %s, source: %s)",
+            message.from_user.id,
+            name,
+            media_type,
+            source,
+        )
         bot.send_message(message.chat.id, f"✅ Мем '{icon} {name}' добавлен!")
     else:
-        logging.warning("[/add] Admin %s tried to add duplicate meme '%s'", message.from_user.id, name)
+        logging.warning(
+            "[/add] Admin %s tried to add duplicate meme '%s'", message.from_user.id, name
+        )
         bot.send_message(message.chat.id, f"❌ Мем с названием '{name}' уже существует")
 
 
 @bot.message_handler(commands=["delete"])
-def delete_meme_start(message):
+def delete_meme_start(message: types.Message) -> None:
     """Start deleting a meme (admin only)."""
-    logging.info("[/delete] Admin %s (%s) started deleting meme", message.from_user.id, message.from_user.first_name)
-    
+    logging.info(
+        "[/delete] Admin %s (%s) started deleting meme",
+        message.from_user.id,
+        message.from_user.first_name,
+    )
+
     if message.from_user.id != ADMIN_ID:
         logging.warning("[/delete] Non-admin user %s tried to delete meme", message.from_user.id)
         bot.send_message(message.chat.id, "❌ Доступно только админу")
         return
-    
+
     if message.chat.type != "private":
         logging.warning("[/delete] Admin %s tried /delete in group chat", message.from_user.id)
         bot.send_message(message.chat.id, "❌ Используй личные сообщения")
         return
-    
+
     memes = db.get_all_memes()
     if not memes:
         bot.send_message(message.chat.id, "❌ Нет сохраненных мемов")
         return
-    
+
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     for _, name, _, _ in memes:
         markup.add(name)
-    
+
     msg = bot.send_message(
         message.chat.id,
         "Выбери мем для удаления:",
-        reply_markup=markup
+        reply_markup=markup,
     )
     bot.register_next_step_handler(msg, delete_meme_confirm)
 
 
-def delete_meme_confirm(message):
+def delete_meme_confirm(message: types.Message) -> None:
     """Confirm meme deletion."""
+    if not message.text:
+        bot.send_message(message.chat.id, "❌ Мем не найден")
+        return
+
     name = message.text.strip()
     meme = db.get_meme_by_name(name)
-    
+
     if not meme:
         bot.send_message(message.chat.id, "❌ Мем не найден")
         return
-    
+
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     markup.add("✅ Да", "❌ Нет")
     msg = bot.send_message(
         message.chat.id,
         f"Удалить мем '{name}'?",
-        reply_markup=markup
+        reply_markup=markup,
     )
     bot.register_next_step_handler(msg, delete_meme_final, name)
 
 
-def delete_meme_final(message, name):
+def delete_meme_final(message: types.Message, name: str) -> None:
     """Final deletion."""
-    if message.text.strip() == "✅ Да":
+    if message.text and message.text.strip() == "✅ Да":
         if db.delete_meme(name):
             logging.info("[/delete] Admin %s deleted meme '%s'", message.from_user.id, name)
             bot.send_message(message.chat.id, f"✅ Мем '{name}' удален!")
         else:
-            logging.error("[/delete] Error deleting meme '%s' by admin %s", name, message.from_user.id)
+            logging.error(
+                "[/delete] Error deleting meme '%s' by admin %s",
+                name,
+                message.from_user.id,
+            )
             bot.send_message(message.chat.id, "❌ Ошибка при удалении")
     else:
-        logging.info("[/delete] Admin %s cancelled deletion of meme '%s'", message.from_user.id, name)
+        logging.info(
+            "[/delete] Admin %s cancelled deletion of meme '%s'", message.from_user.id, name
+        )
         bot.send_message(message.chat.id, "❌ Отмено")
 
 
 @bot.message_handler(commands=["list"])
-def list_memes(message):
+def list_memes(message: types.Message) -> None:
     """List all memes (admin only)."""
-    logging.info("[/list] Admin %s (%s) requested meme list", message.from_user.id, message.from_user.first_name)
-    
+    logging.info(
+        "[/list] Admin %s (%s) requested meme list",
+        message.from_user.id,
+        message.from_user.first_name,
+    )
+
     if message.from_user.id != ADMIN_ID:
         logging.warning("[/list] Non-admin user %s tried to list memes", message.from_user.id)
         bot.send_message(message.chat.id, "❌ Доступно только админу")
         return
-    
+
     memes = db.get_all_memes()
     if not memes:
         logging.info("[/list] Admin %s requested list - no memes found", message.from_user.id)
         bot.send_message(message.chat.id, "Нет сохраненных мемов")
         return
-    
-    logging.info("[/list] Admin %s requested list - %d memes total", message.from_user.id, len(memes))
-    
+
+    logging.info(
+        "[/list] Admin %s requested list - %d memes total", message.from_user.id, len(memes)
+    )
+
     text = "📋 Сохраненные мемы:\n"
     for i, (_, name, _, media_type) in enumerate(memes, 1):
         icon = "🎵" if media_type == "audio" else "🎬"
         text += f"{i}. {icon} {name}\n"
-    
+
     bot.send_message(message.chat.id, text)
 
 
 # Inline query handler
 @bot.inline_handler(lambda query: True)
-def query_meme(inline_query):
+def query_meme(inline_query: types.InlineQuery) -> None:
     """Handle inline queries to get memes."""
     memes = db.get_all_memes()
-    results = []
-    
+    results: list[types.InlineQueryResultBase] = []
+
     audio_count = 0
     video_count = 0
-    
+
     for meme_id, name, file_id, media_type in memes:
+        result: types.InlineQueryResultBase
         if media_type == "audio":
-            result = types.InlineQueryResultCachedVoice(
-                str(meme_id),
-                file_id,
-                name
-            )
+            result = types.InlineQueryResultCachedVoice(str(meme_id), file_id, name)
             audio_count += 1
         else:  # video
-            result = types.InlineQueryResultCachedVideo(
-                str(meme_id),
-                file_id,
-                name
-            )
+            result = types.InlineQueryResultCachedVideo(str(meme_id), file_id, name)
             video_count += 1
-        
+
         results.append(result)
-    
-    logging.info("[inline] User %s (%s) queried memes - %d audio, %d video (query: '%s')", 
-                 inline_query.from_user.id, inline_query.from_user.first_name, 
-                 audio_count, video_count, inline_query.query)
-    
+
+    logging.info(
+        "[inline] User %s (%s) queried memes - %d audio, %d video (query: '%s')",
+        inline_query.from_user.id,
+        inline_query.from_user.first_name,
+        audio_count,
+        video_count,
+        inline_query.query,
+    )
+
     try:
         bot.answer_inline_query(inline_query.id, results, cache_time=300)
     except Exception as e:
-        logging.exception("[inline] Failed to answer inline query from user %s: %s", inline_query.from_user.id, e)
+        logging.exception(
+            "[inline] Failed to answer inline query from user %s: %s",
+            inline_query.from_user.id,
+            e,
+        )
+
+
+def main() -> None:
+    """Validate configuration and start the bot in polling mode."""
+    logging.basicConfig(level=logging.DEBUG)
+
+    if not TOKEN:
+        logging.error("No BOT_TOKEN env provided")
+        sys.exit(1)
+
+    if not ADMIN_ID or ADMIN_ID == 0:
+        logging.error("No ADMIN_ID env provided")
+        sys.exit(1)
+
+    # Optionally route requests through a custom Telegram Bot API endpoint
+    # (e.g. a local Bot API server) to bypass restrictions.
+    if TG_API_URL:
+        logging.info("Using custom Telegram API URL")
+        apihelper.API_URL = TG_API_URL
+
+    logging.info("Starting bot...")
+    bot.infinity_polling()
 
 
 # Run bot
 if __name__ == "__main__":
-    logging.info("Starting bot...")
-    bot.infinity_polling()
+    main()

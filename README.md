@@ -1,73 +1,107 @@
 # tg-audiomeme
 
-Телеграм бот - альтернатива Stickers, но для аудио и видео сообщений.
+[![CI](https://github.com/leitosama/tg-audiomeme/actions/workflows/ci.yml/badge.svg)](https://github.com/leitosama/tg-audiomeme/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 
-## Возможности
+A Telegram bot — like Stickers, but for audio and video messages.
 
-### Для администратора
+## Features
 
-- **Добавление мемов** (`/add`) - добавить аудио или видео в базу данных через личные сообщения:
-  - Можно переслать сообщение с аудио/видео
-  - Или загрузить файл напрямую
-  - Бот сохранит `file_id` для последующего использования
+### For the admin
 
-- **Удаление мемов** (`/delete`) - удалить сохраненный мем
-  - Выбрать мем из списка
-  - Подтвердить удаление
+A single admin (`ADMIN_ID`) manages memes via direct messages to the bot:
 
-- **Список мемов** (`/list`) - посмотреть все сохраненные мемы
+- **`/add`** — add an audio or video to the database:
+  - forward a message with audio/video, or upload a file directly;
+  - the bot stores the Telegram `file_id` for later reuse.
+- **`/delete`** — delete a saved meme (pick from a list + confirmation).
+- **`/list`** — view all saved memes.
 
-### Для всех пользователей
+### For everyone
 
-- **InlineQuery** - использовать аудио/видео мемы через inline mode:
-  - Введи `@botname` в любом чате
-  - Выбери нужный мем
-  - Бот отправит сохраненное аудио или видео
+- **Inline mode** — type `@botname` in any chat, pick a meme, and the bot sends the
+  saved audio or video.
 
-## Установка
+## Quick start (Docker Compose)
 
-### Требования
-
-- Python 3.8+
-- Telegram Bot Token (от BotFather)
-
-### Зависимости
+By default, `docker-compose.yml` pulls the prebuilt image from
+`ghcr.io/leitosama/tg-audiomeme:latest`.
 
 ```bash
-pip install -r requirements.txt
+cp .env.example .env
+# fill in BOT_TOKEN and ADMIN_ID in .env
+docker compose up -d
 ```
 
-### Переменные окружения
-
-Установи переменные в `.env` файле:
-
-```
-BOT_TOKEN=your_bot_token_here
-ADMIN_ID=your_admin_id_here
-DB_PATH=audio_meme.db  # опционально, по умолчанию audio_meme.db
-```
-
-## Запуск
+To build the image locally instead of pulling it from the registry:
 
 ```bash
-python main.py
+docker compose up -d --build
 ```
 
-## База данных
+The database is stored in the `./db` volume on the host.
 
-Все мемы сохраняются в SQLite базе данных (`audio_meme.db` по умолчанию).
+## Environment variables
 
-Таблица `memes`:
-- `id` - уникальный ID
-- `name` - название мема
-- `file_id` - Telegram file_id для кэширования
-- `media_type` - тип: "audio" или "video"
-- `created_at` - дата добавления
+| Variable     | Required | Default                | Description                                                     |
+| ------------ | -------- | ---------------------- | --------------------------------------------------------------- |
+| `BOT_TOKEN`  | yes      | —                      | Bot token from [@BotFather](https://t.me/BotFather).            |
+| `ADMIN_ID`   | yes      | —                      | Telegram ID of the single admin.                                |
+| `DB_PATH`    | no       | `./db/audio_meme.db`   | Path to the SQLite file.                                        |
+| `TG_API_URL` | no       | —                      | Custom Bot API endpoint (e.g. a self-hosted Bot API server).    |
 
-## Docker
+See [`.env.example`](.env.example) for a template.
 
-Проект включает `Dockerfile` и `docker-compose.yml` для контейнеризации.
+## Local development
+
+Requires Python 3.12+.
 
 ```bash
-docker-compose up
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
 ```
+
+Run the bot (variables can be passed inline):
+
+```bash
+BOT_TOKEN=... ADMIN_ID=... python main.py
+```
+
+Quality checks (the same ones CI runs):
+
+```bash
+ruff check .            # linter
+ruff format --check .   # formatting
+mypy main.py            # types (strict, configured in pyproject.toml)
+pytest                  # tests + coverage
+```
+
+## CI/CD
+
+GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
+
+- **On every push and pull request**, a single `check` job runs `ruff` (lint + format),
+  `mypy` (strict), and `pytest` (with coverage).
+- **On push to `main`**, after all checks pass, a multi-platform Docker image
+  (`linux/amd64`, `linux/arm64`) is built and published to
+  `ghcr.io/leitosama/tg-audiomeme` with the tags `latest` and `sha-<commit>`.
+
+`main` is production: there is no separate staging environment and no release
+versioning — working code ships straight to `main`.
+
+## Database
+
+All memes are stored in SQLite (`./db/audio_meme.db` by default).
+
+The `memes` table:
+
+- `id` — unique identifier;
+- `name` — meme name;
+- `file_id` — Telegram `file_id` used for caching;
+- `media_type` — type: `audio` or `video`;
+- `created_at` — date added.
+
+## License
+
+See [LICENSE](LICENSE).
