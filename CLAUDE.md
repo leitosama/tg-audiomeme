@@ -17,14 +17,19 @@ Inspiration - Stickers bot using inline query feature.
 ### Admin mode
 Admin (just one, `ADMIN_ID` env) can manage memes using messages directly to bot.
 
-#### Adding memes
-* Forward audio or video messages to bot
-* Upload audio and video files to bot
+#### Adding memes (`/add`)
+* Media-first flow: forward/upload audio or video, then enter a name, then an
+  optional emoji
 * Bot saves `file_id` in sqlite
-* Every meme contains name and emoji
+* Name is free-form (any text), required and unique; emoji is optional
+* Cancelable at every step (`/cancel` or the ❌ Отмена button); `/skip` leaves
+  the emoji empty
 
-#### Deleting meme
-* Delete with confirmation from list of memes
+#### Managing memes (`/list`, alias `/delete`)
+* Inline-button hub: tap a meme to open its detail view (with a media preview
+  and all-time send count)
+* Rename, change/remove emoji, or delete (delete asks for inline confirmation)
+* Built with inline keyboards + callback queries, editing the message in place
 
 #### Managing users
 * `/users` lists users with their usage `count` and approves/revokes them via
