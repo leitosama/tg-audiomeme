@@ -1,6 +1,7 @@
 import logging
 import os
 import sqlite3
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -376,6 +377,58 @@ def _skip_cancel_keyboard() -> types.ReplyKeyboardMarkup:
     return markup
 
 
+def _convert_video_for_note(src: str, dst: str) -> None:
+    # Scale to <= 640 (input must already be square), H.264, trim to 60 s
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            src,
+            "-t",
+            "60",
+            "-vf",
+            "scale='min(640,iw)':-2",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+            "-movflags",
+            "+faststart",
+            dst,
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+
+
+def _convert_audio_for_voice(src: str, dst: str) -> None:
+    # Transcode to OGG/Opus, mono channel
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            src,
+            "-c:a",
+            "libopus",
+            "-ac",
+            "1",
+            "-b:a",
+            "64k",
+            dst,
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+
+
 # Admin commands
 @bot.message_handler(commands=["start"])
 def start(message: types.Message) -> None:
@@ -434,35 +487,88 @@ def add_meme_get_media(message: types.Message) -> None:
     file_id = None
     media_type = None
 
-    # Voice messages and audio files.
+    # Voice messages — already OGG/Opus, grab file_id directly.
     if message.voice:
         file_id = message.voice.file_id
         media_type = "audio"
+
+    # Audio files — download, convert to OGG/Opus, re-send as voice to cache a stable file_id.
     elif message.audio:
-        file_id = message.audio.file_id
-        media_type = "audio"
-    # Video notes (кружочки) and video files.
+        logging.debug("Downloading and converting audio for a new meme")
+        tmp_in_path = ""
+        tmp_out_path = ""
+        try:
+            file_info = bot.get_file(message.audio.file_id)
+            if not file_info.file_path:
+                raise RuntimeError("Failed to get file path")
+
+            downloaded_file = bot.download_file(file_info.file_path)
+            suffix = Path(file_info.file_path).suffix or ".tmp"
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_in:
+                tmp_in.write(downloaded_file)
+                tmp_in_path = tmp_in.name
+
+            tmp_out_path = tmp_in_path + ".ogg"
+            _convert_audio_for_voice(tmp_in_path, tmp_out_path)
+
+            with open(tmp_out_path, "rb") as audio_file:
+                voice_msg = bot.send_voice(message.chat.id, types.InputFile(audio_file))
+
+            if voice_msg and voice_msg.voice:
+                file_id = voice_msg.voice.file_id
+                media_type = "audio"
+            else:
+                raise RuntimeError("Failed to get voice from response")
+        except Exception as e:
+            logging.exception("Failed to convert audio: %s", e)
+            msg = bot.send_message(
+                message.chat.id,
+                "❌ Ошибка при конвертации файла. Попробуй другой файл.",
+                reply_markup=_cancel_keyboard(),
+            )
+            bot.register_next_step_handler(msg, add_meme_get_media)
+            return
+        finally:
+            Path(tmp_in_path).unlink(missing_ok=True)
+            Path(tmp_out_path).unlink(missing_ok=True)
+
+    # Video notes (кружочки) — always square by Telegram's encoding; grab file_id directly.
     elif message.video_note:
         file_id = message.video_note.file_id
         media_type = "video"
+
+    # Video files — must be square; download, convert to H.264 MP4, re-send as video note.
     elif message.video:
-        # Download the video and re-send it as a video note to cache a usable file_id.
-        logging.debug("Downloading and caching video for a new meme")
+        if message.video.width != message.video.height:
+            msg = bot.send_message(
+                message.chat.id,
+                "❌ Принимаются только видео формата 1:1",
+                reply_markup=_cancel_keyboard(),
+            )
+            bot.register_next_step_handler(msg, add_meme_get_media)
+            return
+
+        logging.debug("Downloading and converting video for a new meme")
+        tmp_in_path = ""
+        tmp_out_path = ""
         try:
             file_info = bot.get_file(message.video.file_id)
             if not file_info.file_path:
                 raise RuntimeError("Failed to get file path")
 
             downloaded_file = bot.download_file(file_info.file_path)
+            suffix = Path(file_info.file_path).suffix or ".mp4"
 
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
-                tmp.write(downloaded_file)
-                tmp_path = tmp.name
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_in:
+                tmp_in.write(downloaded_file)
+                tmp_in_path = tmp_in.name
 
-            with open(tmp_path, "rb") as video_file:
+            tmp_out_path = tmp_in_path + ".mp4"
+            _convert_video_for_note(tmp_in_path, tmp_out_path)
+
+            with open(tmp_out_path, "rb") as video_file:
                 video_note = bot.send_video_note(message.chat.id, types.InputFile(video_file))
-
-            Path(tmp_path).unlink(missing_ok=True)
 
             if video_note and video_note.video_note:
                 file_id = video_note.video_note.file_id
@@ -470,14 +576,17 @@ def add_meme_get_media(message: types.Message) -> None:
             else:
                 raise RuntimeError("Failed to get video_note from response")
         except Exception as e:
-            logging.exception("Failed to cache video: %s", e)
+            logging.exception("Failed to convert video: %s", e)
             msg = bot.send_message(
                 message.chat.id,
-                "❌ Ошибка при кэшировании видео. Попробуй снова",
+                "❌ Ошибка при конвертации файла. Попробуй другой файл.",
                 reply_markup=_cancel_keyboard(),
             )
             bot.register_next_step_handler(msg, add_meme_get_media)
             return
+        finally:
+            Path(tmp_in_path).unlink(missing_ok=True)
+            Path(tmp_out_path).unlink(missing_ok=True)
 
     if not file_id or not media_type:
         msg = bot.send_message(

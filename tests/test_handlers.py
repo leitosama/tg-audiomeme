@@ -7,6 +7,7 @@ without touching the Telegram API.
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
@@ -136,16 +137,97 @@ def test_add_get_media_voice_asks_name(env: SimpleNamespace, make_message: Messa
     assert args[3] == "audio"
 
 
-def test_add_get_media_audio(env: SimpleNamespace, make_message: Message) -> None:
+def test_add_get_media_audio(
+    env: SimpleNamespace, make_message: Message, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env.bot.get_file.return_value = SimpleNamespace(file_path="audio/file.mp3")
+    env.bot.download_file.return_value = b"fakedata"
+    env.bot.send_voice.return_value = SimpleNamespace(voice=SimpleNamespace(file_id="converted-id"))
+
+    def fake_convert(src: str, dst: str) -> None:
+        open(dst, "wb").close()
+
+    monkeypatch.setattr(main, "_convert_audio_for_voice", fake_convert)
+
     main.add_meme_get_media(make_message(audio=media("audio-id")))
+
     args, _ = env.bot.register_next_step_handler.call_args
-    assert (args[2], args[3]) == ("audio-id", "audio")
+    assert args[1] is main.add_meme_get_name
+    assert (args[2], args[3]) == ("converted-id", "audio")
+
+
+def test_add_get_media_audio_conversion_error(
+    env: SimpleNamespace, make_message: Message, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env.bot.get_file.return_value = SimpleNamespace(file_path="audio/file.mp3")
+    env.bot.download_file.return_value = b"fakedata"
+
+    def fake_convert_error(src: str, dst: str) -> None:
+        raise subprocess.CalledProcessError(1, "ffmpeg")
+
+    monkeypatch.setattr(main, "_convert_audio_for_voice", fake_convert_error)
+
+    main.add_meme_get_media(make_message(audio=media("audio-id")))
+
+    assert "конвертации" in sent_texts(env.bot)[0]
+    args, _ = env.bot.register_next_step_handler.call_args
+    assert args[1] is main.add_meme_get_media
 
 
 def test_add_get_media_video_note(env: SimpleNamespace, make_message: Message) -> None:
     main.add_meme_get_media(make_message(video_note=media("vn-id")))
     args, _ = env.bot.register_next_step_handler.call_args
     assert (args[2], args[3]) == ("vn-id", "video")
+
+
+def test_add_get_media_video(
+    env: SimpleNamespace, make_message: Message, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env.bot.get_file.return_value = SimpleNamespace(file_path="video/file.mp4")
+    env.bot.download_file.return_value = b"fakedata"
+    env.bot.send_video_note.return_value = SimpleNamespace(
+        video_note=SimpleNamespace(file_id="converted-vn-id")
+    )
+
+    def fake_convert(src: str, dst: str) -> None:
+        open(dst, "wb").close()
+
+    monkeypatch.setattr(main, "_convert_video_for_note", fake_convert)
+
+    video_obj = SimpleNamespace(file_id="video-id", width=480, height=480)
+    main.add_meme_get_media(make_message(video=video_obj))
+
+    args, _ = env.bot.register_next_step_handler.call_args
+    assert args[1] is main.add_meme_get_name
+    assert (args[2], args[3]) == ("converted-vn-id", "video")
+
+
+def test_add_get_media_video_not_square(env: SimpleNamespace, make_message: Message) -> None:
+    video_obj = SimpleNamespace(file_id="video-id", width=640, height=360)
+    main.add_meme_get_media(make_message(video=video_obj))
+
+    assert "формата 1:1" in sent_texts(env.bot)[0]
+    args, _ = env.bot.register_next_step_handler.call_args
+    assert args[1] is main.add_meme_get_media
+
+
+def test_add_get_media_video_conversion_error(
+    env: SimpleNamespace, make_message: Message, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env.bot.get_file.return_value = SimpleNamespace(file_path="video/file.mp4")
+    env.bot.download_file.return_value = b"fakedata"
+
+    def fake_convert_error(src: str, dst: str) -> None:
+        raise subprocess.CalledProcessError(1, "ffmpeg")
+
+    monkeypatch.setattr(main, "_convert_video_for_note", fake_convert_error)
+
+    video_obj = SimpleNamespace(file_id="video-id", width=480, height=480)
+    main.add_meme_get_media(make_message(video=video_obj))
+
+    assert "конвертации" in sent_texts(env.bot)[0]
+    args, _ = env.bot.register_next_step_handler.call_args
+    assert args[1] is main.add_meme_get_media
 
 
 def test_add_get_media_no_media_reprompts(env: SimpleNamespace, make_message: Message) -> None:
