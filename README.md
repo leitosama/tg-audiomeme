@@ -16,11 +16,23 @@ A single admin (`ADMIN_ID`) manages memes via direct messages to the bot:
   - the bot stores the Telegram `file_id` for later reuse.
 - **`/delete`** — delete a saved meme (pick from a list + confirmation).
 - **`/list`** — view all saved memes.
+- **`/users`** — list users with their usage count and approve/revoke them via
+  inline buttons (relevant when `REQUIRE_APPROVAL` is on).
 
 ### For everyone
 
 - **Inline mode** — type `@botname` in any chat, pick a meme, and the bot sends the
   saved audio or video.
+
+### Optional: user approval
+
+Set `REQUIRE_APPROVAL=true` to gate inline usage behind admin approval. Unapproved
+users see *"Ожидайте разрешение администратором"* instead of memes, and the admin
+approves them with `/users`. When the flag is off (default), anyone may use the bot.
+
+Per-user send counts are tracked whenever a meme is sent. This relies on Telegram
+delivering `chosen_inline_result` updates, so enable inline feedback for the bot in
+[@BotFather](https://t.me/BotFather) (`/setinlinefeedback`).
 
 ## Quick start (Docker Compose)
 
@@ -49,6 +61,7 @@ The database is stored in the `./db` volume on the host.
 | `ADMIN_ID`   | yes      | —                      | Telegram ID of the single admin.                                |
 | `DB_PATH`    | no       | `./db/audio_meme.db`   | Path to the SQLite file.                                        |
 | `TG_API_URL` | no       | —                      | Custom Bot API endpoint (e.g. a self-hosted Bot API server).    |
+| `REQUIRE_APPROVAL` | no | `false`                | Gate inline usage behind admin approval (see above).            |
 
 See [`.env.example`](.env.example) for a template.
 
@@ -101,6 +114,14 @@ The `memes` table:
 - `file_id` — Telegram `file_id` used for caching;
 - `media_type` — type: `audio` or `video`;
 - `created_at` — date added.
+
+The `users` table:
+
+- `userid` — Telegram user id (primary key);
+- `displayname` — the user's first name, refreshed on each use;
+- `approved` — whether the user may send memes (only enforced when
+  `REQUIRE_APPROVAL` is on);
+- `count` — number of memes the user has sent.
 
 ## License
 

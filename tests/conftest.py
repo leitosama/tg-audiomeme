@@ -92,3 +92,47 @@ def make_inline_query() -> Callable[..., SimpleNamespace]:
         )
 
     return _make
+
+
+@pytest.fixture
+def make_chosen_inline_result() -> Callable[..., SimpleNamespace]:
+    """Factory building fake telebot ChosenInlineResult objects."""
+
+    def _make(
+        result_id: str = "1",
+        user_id: int = USER_ID,
+        first_name: str = "Tester",
+        query: str = "",
+    ) -> SimpleNamespace:
+        return SimpleNamespace(
+            result_id=result_id,
+            query=query,
+            from_user=SimpleNamespace(id=user_id, first_name=first_name),
+        )
+
+    return _make
+
+
+@pytest.fixture
+def make_callback_query() -> Callable[..., SimpleNamespace]:
+    """Factory building fake telebot CallbackQuery objects."""
+
+    def _make(
+        data: str = "",
+        call_id: str = "cb-1",
+        user_id: int = ADMIN_ID,
+        first_name: str = "Tester",
+        chat_id: int = 999,
+        message_id: int = 555,
+    ) -> SimpleNamespace:
+        return SimpleNamespace(
+            id=call_id,
+            data=data,
+            from_user=SimpleNamespace(id=user_id, first_name=first_name),
+            message=SimpleNamespace(
+                message_id=message_id,
+                chat=SimpleNamespace(id=chat_id, type="private"),
+            ),
+        )
+
+    return _make

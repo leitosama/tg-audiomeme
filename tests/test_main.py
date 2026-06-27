@@ -9,6 +9,24 @@ import pytest
 import main
 
 
+@pytest.mark.parametrize("value", ["1", "true", "TRUE", "Yes", "on", "  on  "])
+def test_env_bool_truthy(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv("FEATURE_FLAG", value)
+    assert main._env_bool("FEATURE_FLAG") is True
+
+
+@pytest.mark.parametrize("value", ["0", "false", "no", "off", "", "anything"])
+def test_env_bool_falsy(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv("FEATURE_FLAG", value)
+    assert main._env_bool("FEATURE_FLAG") is False
+
+
+def test_env_bool_unset_uses_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("FEATURE_FLAG", raising=False)
+    assert main._env_bool("FEATURE_FLAG") is False
+    assert main._env_bool("FEATURE_FLAG", default=True) is True
+
+
 def test_main_exits_without_token(monkeypatch: pytest.MonkeyPatch, bot: MagicMock) -> None:
     monkeypatch.setattr(main, "TOKEN", "")
     monkeypatch.setattr(main, "ADMIN_ID", 123)

@@ -26,10 +26,22 @@ Admin (just one, `ADMIN_ID` env) can manage memes using messages directly to bot
 #### Deleting meme
 * Delete with confirmation from list of memes
 
+#### Managing users
+* `/users` lists users with their usage `count` and approves/revokes them via
+  inline buttons (only meaningful when `REQUIRE_APPROVAL` is on)
+
 ### User mode
 * Inlinequery: user writes @botname in chat and choose meme or search by name/emoji
 * Save meme usage using simple counter
 * Provide stats using special inlinequery stats. Stats returns Top-3 memes by all time
+
+#### Optional user approval (`REQUIRE_APPROVAL` env)
+* `users` table: `userid`, `displayname`, `approved` (default false), `count`
+* When true, only `approved=true` users may use inline queries to send memes;
+  others see "Ожидайте разрешение администратором"
+* When false, the `approved` column is ignored
+* Every meme send updates the sender's `displayname` and increments `count`
+  (via `chosen_inline_result`; requires BotFather `/setinlinefeedback`)
 
 ## Deployment Modes
 - SQLite for persistence, DB file `bot.db` in named volume at `/app/data/`
