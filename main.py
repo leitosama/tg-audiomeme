@@ -837,9 +837,9 @@ def main() -> None:
     if not ADMIN_ID or ADMIN_ID == 0:
         logging.error("No ADMIN_ID env provided")
         sys.exit(1)
-    
+
     # default timeout
-    timeout = 25 
+    timeout = 25
     
     # Optionally route requests through a custom Telegram Bot API endpoint
     # (e.g. a local Bot API server) to bypass restrictions.
