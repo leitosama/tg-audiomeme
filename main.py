@@ -840,7 +840,7 @@ def main() -> None:
 
     # default timeout
     timeout = 25
-    
+
     # Optionally route requests through a custom Telegram Bot API endpoint
     # (e.g. a local Bot API server) to bypass restrictions.
     if TG_API_URL:
