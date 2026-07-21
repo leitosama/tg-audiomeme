@@ -17,10 +17,22 @@ TOKEN = os.environ.get("BOT_TOKEN", "")
 ADMIN_ID = int(os.environ.get("ADMIN_ID") or "0")
 DB_PATH = os.environ.get("DB_PATH", "./db/audio_meme.db")
 TG_API_URL = os.environ.get("TG_API_URL", "")
-TG_API_TIMEOUT = int(os.environ.get("TG_API_TIMEOUT", "25"))
+# Socket read timeout for Telegram API calls, incl. the getUpdates long-poll. Kept
+# modest so a *stalled* poll is abandoned and retried on a fresh connection within
+# seconds, rather than blocking update delivery for the whole window.
+TG_API_TIMEOUT = int(os.environ.get("TG_API_TIMEOUT", "30"))
+# Server-side long-poll hold for getUpdates. Must stay below TG_API_TIMEOUT so a
+# normal empty long-poll isn't cut off by the socket read timeout.
+TG_LONG_POLL_TIMEOUT = int(os.environ.get("TG_LONG_POLL_TIMEOUT", "25"))
+# Root log level; default INFO. Set to DEBUG to see telebot's per-request logging.
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 # When true, only users with approved=true may use inline queries to send memes.
 # When false, the approved column is ignored and everyone may use the bot.
 REQUIRE_APPROVAL = os.environ.get("REQUIRE_APPROVAL") == "true"
+
+# Update types the bot actually handles. Passed to getUpdates so Telegram neither
+# queues nor makes us fetch update types we ignore (edited messages, polls, etc.).
+ALLOWED_UPDATES = ["message", "callback_query", "inline_query", "chosen_inline_result"]
 
 # Limits / sentinels for the admin conversation flows.
 MAX_NAME_LENGTH = 100
@@ -828,7 +840,7 @@ def on_user_action(call: types.CallbackQuery) -> None:
 
 def main() -> None:
     """Validate configuration and start the bot in polling mode."""
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO))
 
     if not TOKEN:
         logging.error("No BOT_TOKEN env provided")
@@ -838,8 +850,12 @@ def main() -> None:
         logging.error("No ADMIN_ID env provided")
         sys.exit(1)
 
-    # default timeout
-    timeout = TG_API_TIMEOUT if TG_API_TIMEOUT else 25
+    # The read timeout must exceed the long-poll hold, else a normal empty poll is
+    # cut off; enforce that invariant defensively regardless of how the envs are set.
+    long_poll_timeout = TG_LONG_POLL_TIMEOUT if TG_LONG_POLL_TIMEOUT > 0 else 25
+    read_timeout = TG_API_TIMEOUT if TG_API_TIMEOUT else 30
+    if read_timeout <= long_poll_timeout:
+        read_timeout = long_poll_timeout + 5
 
     # Optionally route requests through a custom Telegram Bot API endpoint
     # (e.g. a local Bot API server) to bypass restrictions.
@@ -851,7 +867,15 @@ def main() -> None:
         apihelper.FILE_URL = TG_API_URL.replace("/bot{0}/{1}", "/file/bot{0}/{1}")
 
     logging.info("Starting bot...")
-    bot.infinity_polling(timeout=timeout)
+    # skip_pending drops the backlog on restart so stale inline queries (which
+    # expire and can't be answered late anyway) aren't replayed; allowed_updates
+    # limits fetches to the types we handle.
+    bot.infinity_polling(
+        timeout=read_timeout,
+        long_polling_timeout=long_poll_timeout,
+        allowed_updates=ALLOWED_UPDATES,
+        skip_pending=True,
+    )
 
 
 # Run bot
