@@ -17,7 +17,7 @@ TOKEN = os.environ.get("BOT_TOKEN", "")
 ADMIN_ID = int(os.environ.get("ADMIN_ID") or "0")
 DB_PATH = os.environ.get("DB_PATH", "./db/audio_meme.db")
 TG_API_URL = os.environ.get("TG_API_URL", "")
-TG_API_TIMEOUT = os.environ.get("TG_API_TIMEOUT", "25")
+TG_API_TIMEOUT = int(os.environ.get("TG_API_TIMEOUT", "25"))
 # When true, only users with approved=true may use inline queries to send memes.
 # When false, the approved column is ignored and everyone may use the bot.
 REQUIRE_APPROVAL = os.environ.get("REQUIRE_APPROVAL") == "true"
@@ -839,14 +839,13 @@ def main() -> None:
         sys.exit(1)
 
     # default timeout
-    timeout = 25
+    timeout = TG_API_TIMEOUT if TG_API_TIMEOUT else 25
 
     # Optionally route requests through a custom Telegram Bot API endpoint
     # (e.g. a local Bot API server) to bypass restrictions.
     if TG_API_URL:
         logging.info("Using custom Telegram API URL")
         apihelper.API_URL = TG_API_URL
-        timeout = int(TG_API_TIMEOUT)
         # Route file downloads through the same server; default FILE_URL points
         # to api.telegram.org directly, bypassing TG_API_URL entirely.
         apihelper.FILE_URL = TG_API_URL.replace("/bot{0}/{1}", "/file/bot{0}/{1}")
