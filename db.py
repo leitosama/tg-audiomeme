@@ -259,3 +259,8 @@ class AudioMemeDB:
             )
             self._conn.commit()
             return cursor.rowcount > 0
+
+    def close(self) -> None:
+        """Close the underlying SQLite connection."""
+        with self._lock:
+            self._conn.close()

@@ -1,5 +1,6 @@
 import logging
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -866,6 +867,13 @@ def main() -> None:
         # to api.telegram.org directly, bypassing TG_API_URL entirely.
         apihelper.FILE_URL = TG_API_URL.replace("/bot{0}/{1}", "/file/bot{0}/{1}")
 
+    def _shutdown(signum: int, frame: object) -> None:
+        logging.info("Received signal %s, stopping...", signum)
+        bot.stop_polling()
+
+    signal.signal(signal.SIGTERM, _shutdown)
+    signal.signal(signal.SIGINT, _shutdown)
+
     logging.info("Starting bot...")
     # skip_pending drops the backlog on restart so stale inline queries (which
     # expire and can't be answered late anyway) aren't replayed; allowed_updates
@@ -876,6 +884,7 @@ def main() -> None:
         allowed_updates=ALLOWED_UPDATES,
         skip_pending=True,
     )
+    db.close()
 
 
 # Run bot
