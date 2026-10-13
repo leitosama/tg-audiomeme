@@ -38,7 +38,7 @@ jobs:
       cancel-in-progress: false
     env:
       TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_TOKEN }}
-      ADMIN_ID: ${{ vars.ADMIN_ID }}
+      ADMIN_ID: ${{ secrets.ADMIN_ID }}
       REQUIRE_APPROVAL: ${{ vars.REQUIRE_APPROVAL }}
     steps:
       - uses: actions/checkout@v4
