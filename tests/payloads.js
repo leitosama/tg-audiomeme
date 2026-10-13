@@ -21,3 +21,16 @@ export function textMessage(text, { from = USER_ID, chatType = 'private' } = {})
       : { id: -100, type: chatType, title: 'Chat' };
   return /** @type {Message} */ ({ message_id: 1, date: 0, chat, from: user, text });
 }
+
+/**
+ * A media message (no text) in a private chat with the sender, carrying a file of the
+ * given kind with `file_id` = `<kind>-file`.
+ * @param {'voice' | 'video_note' | 'audio' | 'video' | 'sticker'} kind
+ * @param {{ from?: number }} [opts]
+ * @returns {Message}
+ */
+export function mediaMessage(kind, { from = ADMIN_ID } = {}) {
+  const { text: _, ...message } = textMessage('', { from });
+  const file = { file_id: `${kind}-file`, file_unique_id: `${kind}-unique` };
+  return /** @type {Message} */ ({ ...message, [kind]: file });
+}

@@ -1,4 +1,4 @@
-import { boolean, check, integer, sql, table, text } from 'sdk/db';
+import { boolean, check, integer, json, sql, table, text } from 'sdk/db';
 
 // Same columns and meaning as the Python bot's SQLite schema, so a bot instance's
 // exported data imports as a straight copy. The platform forbids foreign keys.
@@ -25,4 +25,14 @@ export const users = table('users', {
   displayName: text('displayname'),
   approved: boolean('approved').notNull().default(false),
   count: integer('count').notNull().default(0),
+});
+
+// The admin's pending conversation step per chat (e.g. `/add` waiting for a name),
+// saved between updates in place of the Python bot's next-step handlers. `data`
+// holds what earlier steps collected.
+export const conversationSteps = table('conversation_steps', {
+  chatId: integer('chat_id').primaryKey(),
+  name: text('name').notNull(),
+  data: json('data').notNull(),
+  updatedAt: text('updated_at').default(sql`(CURRENT_TIMESTAMP)`),
 });
