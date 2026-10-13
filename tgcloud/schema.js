@@ -26,8 +26,3 @@ export const users = table('users', {
   approved: boolean('approved').notNull().default(false),
   count: integer('count').notNull().default(0),
 });
-
-// TEMPORARY: probes that CI refuses non-safe schema changes (#13). Remove after.
-export const deployProbe = table('deploy_probe', {
-  id: integer('id').primaryKey(),
-}).deprecated('deploy check');
