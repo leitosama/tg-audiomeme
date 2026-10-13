@@ -34,3 +34,18 @@ export function mediaMessage(kind, { from = ADMIN_ID } = {}) {
   const file = { file_id: `${kind}-file`, file_unique_id: `${kind}-unique` };
   return /** @type {Message} */ ({ ...message, [kind]: file });
 }
+
+// --- Inline queries (issue #15) ---
+
+/** @typedef {import('@grammyjs/types').InlineQuery} InlineQuery */
+
+/**
+ * An inline query typed by a user (`@bot <query>`), as `handlers/inline_query` receives it.
+ * @param {string} query
+ * @param {{ from?: number, offset?: string }} [opts]
+ * @returns {InlineQuery}
+ */
+export function inlineQuery(query, { from = USER_ID, offset = '' } = {}) {
+  const user = { id: from, is_bot: false, first_name: `User ${from}` };
+  return { id: `iq-${from}`, from: user, query, offset, chat_type: 'sender' };
+}

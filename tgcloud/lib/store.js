@@ -3,7 +3,7 @@
 // which must keep the same exports — add each new query to both.
 
 import { db } from 'sdk';
-import { eq, sql } from 'sdk/db';
+import { asc, desc, eq, sql } from 'sdk/db';
 import { conversationSteps, memes } from '../schema.js';
 
 /**
@@ -93,4 +93,24 @@ export async function addMeme(meme) {
     .onConflictDoNothing({ target: memes.name })
     .returning({ id: memes.id });
   return rows.length > 0;
+}
+
+// --- Inline search (issue #15) ---
+
+/**
+ * Memes whose meme name or emoji contains `query` (trimmed; case-insensitive), or
+ * every meme for a blank query — most-sent first, ties by meme name. Matching runs
+ * here rather than as SQL LIKE, which only folds ASCII case (names are mostly
+ * Cyrillic) and would treat `%`/`_` as wildcards.
+ * @param {string} query
+ * @returns {Promise<Meme[]>}
+ */
+export async function searchMemes(query) {
+  /** @type {Meme[]} */
+  const rows = await db.select().from(memes).orderBy(desc(memes.count), asc(memes.name)).all();
+  const needle = query.trim().toLowerCase();
+  if (!needle) return rows;
+  return rows.filter(
+    (m) => m.name.toLowerCase().includes(needle) || m.emoji.toLowerCase().includes(needle),
+  );
 }
