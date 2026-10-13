@@ -77,8 +77,12 @@ called as plain functions; assert on the mock bot's calls. No real Telegram API 
 - When adding an env var, update `.env.example`, `docker-compose.yml`, and the README table.
 - `main` is production (no staging, no versioning). Work in `claude/*` branches and open
   PRs into `main`.
-- `tgcloud/`, `AGENTS.md`, `package.json`, `docs/tgcloud-sdk.md` are an untracked,
-  unrelated JS scaffold for Telegram's serverless platform — not part of the Python bot.
+- On the `claude/tgcloud-rewrite` branch, a JavaScript rewrite for Telegram's serverless
+  platform (tgcloud) is growing beside the Python bot (spec: issue #12). Platform rules
+  are in `AGENTS.md` and `docs/tgcloud-sdk.md`. `npm run check` runs Biome, `tsc` and
+  Vitest with coverage; `npm run config` generates the gitignored `tgcloud/lib/config.js`
+  from `.env`. Its CI (`.github/workflows/tgcloud.yml`) deploys pushes to the rewrite
+  branch to the `dev` GitHub Environment. Feature PRs target `claude/tgcloud-rewrite`.
 
 ## Agent skills
 
