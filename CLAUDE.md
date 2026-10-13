@@ -1,90 +1,95 @@
-# tg-audiomeme — Architecture Spec
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Overview
-Telegram bot for audiomemes/videomemes with one deployment targets:
-- **Local**: Docker Compose + SQLite (for development and testing)
+Telegram bot for audio/video memes, modelled on the Stickers bot's inline-query UX.
+Python 3.12+, pyTelegramBotAPI (`telebot`), SQLite, long-polling. Deployed only via
+Docker Compose. User-facing bot strings are in Russian — keep new ones in Russian.
 
-## Stack
-- Python 3.12+
-- pyTelegramBotAPI (telebot)
-- python-dotenv
-- Standard logging module
-- Type hints everywhere — mypy strict mode is mandatory
+## Commands
+```bash
+pip install -r requirements-dev.txt     # into a 3.12+ venv
 
-## Bot Logic
-Inspiration - Stickers bot using inline query feature.
+ruff check . && ruff format --check .   # lint + format (ruff format . to fix)
+mypy main.py                            # strict; follows the import into db.py
+pytest                                  # all tests + coverage (fails under 80% on main.py)
+pytest tests/test_handlers.py::test_name   # single test
+pytest -k inline --no-cov               # filter; --no-cov skips the coverage gate
 
-### Admin mode
-Admin (just one, `ADMIN_ID` env) can manage memes using messages directly to bot.
+BOT_TOKEN=... ADMIN_ID=... python main.py   # run locally (needs ffmpeg on PATH)
+docker compose up -d [--build]          # pulls ghcr.io image by default; --build builds locally
+```
+CI (`.github/workflows/ci.yml`) runs exactly the lint/mypy/pytest commands above in one
+`check` job on every push/PR; on push to `main` it then builds and pushes a multi-arch
+(amd64/arm64) image to `ghcr.io/leitosama/tg-audiomeme` (`latest` + `sha-*`).
 
-#### Adding memes (`/add`)
-* Media-first flow: forward/upload audio or video, then enter a name, then an
-  optional emoji
-* Bot saves `file_id` in sqlite
-* Name is free-form (any text), required and unique; emoji is optional
-* Cancelable at every step (`/cancel` or the ❌ Отмена button); `/skip` leaves
-  the emoji empty
+## Architecture
+Two modules, no package:
 
-#### Managing memes (`/list`, alias `/delete`)
-* Inline-button hub: tap a meme to open its detail view (with a media preview
-  and all-time send count)
-* Rename, change/remove emoji, or delete (delete asks for inline confirmation)
-* Built with inline keyboards + callback queries, editing the message in place
+- **`main.py`** — config (env vars read at import time into module globals), the
+  module-level `bot = telebot.TeleBot(...)` and `db = AudioMemeDB(DB_PATH)` singletons,
+  every handler (registered via `@bot.*_handler` decorators at import), and `main()`.
+  `main()` validates `BOT_TOKEN`/`ADMIN_ID`, applies `TG_API_URL` (overrides both
+  `apihelper.API_URL` and `FILE_URL`), installs SIGTERM/SIGINT handlers, and calls
+  `bot.infinity_polling(skip_pending=True, allowed_updates=ALLOWED_UPDATES)`. The read
+  timeout is forced above the long-poll timeout. New update types must be added to
+  `ALLOWED_UPDATES` or Telegram won't deliver them.
+- **`db.py`** — `AudioMemeDB`: one shared `sqlite3` connection (`check_same_thread=False`)
+  guarded by a `threading.Lock`, WAL mode, because telebot runs handlers on worker
+  threads. Schema is created in `init_db()`; migrations are ad-hoc `PRAGMA table_info`
+  checks + `ALTER TABLE ADD COLUMN` there — add new columns the same way. Methods return
+  `Meme` NamedTuples / plain tuples.
 
-#### Managing users
-* `/users` lists users with their usage `count` and approves/revokes them via
-  inline buttons (only meaningful when `REQUIRE_APPROVAL` is on)
+Key flows in `main.py`:
+- **Admin conversations** (`/add`, rename, change emoji) are multi-step via
+  `bot.register_next_step_handler(msg, next_fn, *args)`; state is passed as extra args,
+  not stored. Every step must honour cancel (`_cancel_requested` → `/cancel` or
+  `CANCEL_TEXT`). Admin gating is `_is_admin_private(message, tag)` (single `ADMIN_ID`,
+  private chat only).
+- **Media ingest**: voice/video_note `file_id`s are stored directly; plain audio/video files
+  are downloaded, transcoded with `ffmpeg` (OGG/Opus voice, ≤640px H.264 video note),
+  re-sent to the admin chat, and *that* message's `file_id` is stored — inline results use
+  `InlineQueryResultCachedVoice`/`CachedVideo`, so only stored `file_id`s are ever sent.
+- **Inline UI** (`/list`, `/users`) uses callback data `meme:<action>:<id>` and
+  `user:<action>:<id>`, editing the message in place.
+- **Inline queries**: `stats` / `userstats` are reserved queries returning leaderboard
+  articles (non-numeric result ids); otherwise results are memes with `result_id = str(meme.id)`.
+  With `REQUIRE_APPROVAL=true` (literal string `true`), unapproved users get a pending
+  article and answers are `is_personal`.
+- **Counting** happens in the `chosen_inline_result` handler (requires BotFather
+  `/setinlinefeedback`): only numeric result ids count, deduped by `inline_message_id`
+  in a bounded in-memory deque.
 
-### User mode
-* Inlinequery: user writes @botname in chat and choose meme or search by name/emoji
-* Save meme usage using simple counter
-* Provide stats using special inlinequery stats. Stats returns Top-3 memes by all time
+## Tests
+Tests import `main` directly (the module stays importable without a real token). Fixtures
+in `tests/conftest.py`: `bot` monkeypatches `main.bot` with a `MagicMock`; `env` also
+swaps `main.db` for a temp-file `AudioMemeDB` and sets `ADMIN_ID`; `make_message` /
+`make_inline_query` etc. build `SimpleNamespace` fakes of telebot objects. Handlers are
+called as plain functions; assert on the mock bot's calls. No real Telegram API calls.
 
-#### Optional user approval (`REQUIRE_APPROVAL` env)
-* `users` table: `userid`, `displayname`, `approved` (default false), `count`
-* When true, only `approved=true` users may use inline queries to send memes;
-  others see "Ожидайте разрешение администратором"
-* When false, the `approved` column is ignored
-* Every meme send updates the sender's `displayname` and increments `count`
-  (via `chosen_inline_result`; requires BotFather `/setinlinefeedback`)
+## Conventions & constraints
+- mypy `--strict` is mandatory (telebot is treated as untyped; see `pyproject.toml`).
+  ruff line length 100.
+- Logs go to stdout via `logging`; level from `LOG_LEVEL`.
+- DB defaults to `./db/audio_meme.db`; Compose mounts `./db` at `/app/db`. The Dockerfile
+  copies only `main.py` and `db.py` — update it if you add a module.
+- When adding an env var, update `.env.example`, `docker-compose.yml`, and the README table.
+- `main` is production (no staging, no versioning). Work in `claude/*` branches and open
+  PRs into `main`.
+- `tgcloud/`, `AGENTS.md`, `package.json`, `docs/tgcloud-sdk.md` are an untracked,
+  unrelated JS scaffold for Telegram's serverless platform — not part of the Python bot.
 
-## Deployment Modes
-- SQLite for persistence, DB file `bot.db` in named volume at `/app/data/`
-- Settings via `.env` + python-dotenv, including `BOT_TOKEN`
-- Logs → stdout → `docker compose logs`
-- Bot runs in **polling** mode: `bot.infinity_polling()`
-- `docker-compose.yml`: default policy is `image: ghcr.io/...` (pull). Build by `--build` key in docker-compose
-- Special optional env `TG_API_URL` for `telebot.apihelper.API_URL = TG_API_URL` to bypass restrictions 
+## Agent skills
 
-## Code Quality
-- **ruff** — linter and formatter, configured in `pyproject.toml`
-- **mypy** — strict mode (`--strict`), configured in `pyproject.toml`
-- **pytest** — unit and integration tests, mocking Workers environment
-  - Unit tests: bot logic, handlers, storage implementations
-  - Integration tests: webhook entry point with mocked `WorkerEntrypoint` and `env.DB`
-  - No real `workerd` or Telegram API calls in tests
-- pre-commit hooks (ruff + mypy): setup instructions in `CONTRIBUTING.md`,
-  not enforced by default
+### Issue tracker
 
-## CI/CD (GitHub Actions)
+Issues live in GitHub Issues (leitosama/tg-audiomeme), managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
-Two separate workflows:
+### Triage labels
 
-**On every push and PR** (all branches):
-lint:      ruff check + ruff format --check
-typecheck: mypy --strict src/
-test:      pytest tests/
+Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
 
-**On push/merge to `main` only:**
-build:
-docker buildx build --platform linux/amd64,linux/arm64 → ghcr.io/<owner>/<repo>:latest
+### Domain docs
 
-- Build runs only if lint + typecheck + test all pass
-- Claude Code works in `claude/*` branches, PRs into `main`
-
-## README
-- Local quickstart (Docker Compose, `.env.example`)
-
-## Constraints
-- No staging environment — `main` is production
-- No release versioning — working code ships directly to `main`
+Single-context: one root `CONTEXT.md` + `docs/adr/` (created lazily). See `docs/agents/domain.md`.
