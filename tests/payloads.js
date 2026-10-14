@@ -49,3 +49,35 @@ export function inlineQuery(query, { from = USER_ID, offset = '' } = {}) {
   const user = { id: from, is_bot: false, first_name: `User ${from}` };
   return { id: `iq-${from}`, from: user, query, offset, chat_type: 'sender' };
 }
+
+// --- Chosen inline results (issue #16) ---
+
+/** @typedef {import('@grammyjs/types').ChosenInlineResult} ChosenInlineResult */
+
+/**
+ * A user's pick from the inline results, as `handlers/chosen_inline_result` receives
+ * it. Like a real meme send, it carries no `inline_message_id` unless one is given.
+ * @param {string} resultId
+ * @param {{ from?: number, firstName?: string, inlineMessageId?: string }} [opts]
+ * @returns {ChosenInlineResult}
+ */
+export function chosenResult(
+  resultId,
+  { from = USER_ID, firstName = `User ${from}`, inlineMessageId } = {},
+) {
+  const user = { id: from, is_bot: false, first_name: firstName };
+  return {
+    result_id: resultId,
+    from: user,
+    query: '',
+    ...(inlineMessageId === undefined ? {} : { inline_message_id: inlineMessageId }),
+  };
+}
+
+/**
+ * The handler context for the update with this ID.
+ * @param {number} updateId
+ */
+export function updateContext(updateId) {
+  return { update: { update_id: updateId } };
+}

@@ -12,12 +12,15 @@ export const tables = {
   users: [],
   /** @type {ConversationStep[]} */
   steps: [],
+  /** @type {{ sendKey: string, seenAt: number }[]} */
+  seenSends: [],
 };
 
 export function resetStore() {
   tables.memes = [];
   tables.users = [];
   tables.steps = [];
+  tables.seenSends = [];
 }
 
 // --- Conversation steps and adding memes (/add, issue #14) ---
@@ -82,4 +85,47 @@ export async function searchMemes(query) {
     )
     .sort((a, b) => b.count - a.count || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     .map((m) => ({ ...m }));
+}
+
+// --- Send counting (issue #16) ---
+
+/**
+ * @param {string} sendKey
+ * @param {number} seenAt
+ * @returns {Promise<boolean>}
+ */
+export async function markSendSeen(sendKey, seenAt) {
+  if (tables.seenSends.some((s) => s.sendKey === sendKey)) return false;
+  tables.seenSends.push({ sendKey, seenAt });
+  return true;
+}
+
+/** @param {string} sendKey */
+export async function unmarkSendSeen(sendKey) {
+  tables.seenSends = tables.seenSends.filter((s) => s.sendKey !== sendKey);
+}
+
+/** @param {number} before */
+export async function pruneSeenSends(before) {
+  tables.seenSends = tables.seenSends.filter((s) => s.seenAt >= before);
+}
+
+/** @param {number} memeId */
+export async function incrementMemeCount(memeId) {
+  const meme = tables.memes.find((m) => m.id === memeId);
+  if (meme) meme.count += 1;
+}
+
+/**
+ * @param {number} userId
+ * @param {string} displayName
+ */
+export async function recordUserSend(userId, displayName) {
+  const user = tables.users.find((u) => u.userId === userId);
+  if (user) {
+    user.displayName = displayName;
+    user.count += 1;
+  } else {
+    tables.users.push({ userId, displayName, approved: false, count: 1 });
+  }
 }

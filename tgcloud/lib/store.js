@@ -3,8 +3,8 @@
 // which must keep the same exports — add each new query to both.
 
 import { db } from 'sdk';
-import { asc, desc, eq, sql } from 'sdk/db';
-import { conversationSteps, memes } from '../schema.js';
+import { asc, desc, eq, lt, sql } from 'sdk/db';
+import { conversationSteps, memes, seenSends, users } from '../schema.js';
 
 /**
  * @typedef {object} Meme
@@ -113,4 +113,59 @@ export async function searchMemes(query) {
   return rows.filter(
     (m) => m.name.toLowerCase().includes(needle) || m.emoji.toLowerCase().includes(needle),
   );
+}
+
+// --- Send counting (issue #16) ---
+
+/**
+ * Marks a send as seen; false when it already was.
+ * @param {string} sendKey
+ * @param {number} seenAt Unix seconds
+ * @returns {Promise<boolean>}
+ */
+export async function markSendSeen(sendKey, seenAt) {
+  const rows = await db
+    .insert(seenSends)
+    .values({ sendKey, seenAt })
+    .onConflictDoNothing({ target: seenSends.sendKey })
+    .returning({ sendKey: seenSends.sendKey });
+  return rows.length > 0;
+}
+
+/** @param {string} sendKey */
+export async function unmarkSendSeen(sendKey) {
+  await db.delete(seenSends).where(eq(seenSends.sendKey, sendKey)).run();
+}
+
+/**
+ * Drops seen sends marked before `before`.
+ * @param {number} before Unix seconds
+ */
+export async function pruneSeenSends(before) {
+  await db.delete(seenSends).where(lt(seenSends.seenAt, before)).run();
+}
+
+/** @param {number} memeId */
+export async function incrementMemeCount(memeId) {
+  await db
+    .update(memes)
+    .set({ count: sql`${memes.count} + 1` })
+    .where(eq(memes.id, memeId))
+    .run();
+}
+
+/**
+ * Counts a send for the user, registering them if new and refreshing their display name.
+ * @param {number} userId
+ * @param {string} displayName
+ */
+export async function recordUserSend(userId, displayName) {
+  await db
+    .insert(users)
+    .values({ userId, displayName, count: 1 })
+    .onConflictDoUpdate({
+      target: users.userId,
+      set: { displayName, count: sql`${users.count} + 1` },
+    })
+    .run();
 }
