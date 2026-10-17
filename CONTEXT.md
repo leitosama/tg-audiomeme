@@ -21,6 +21,11 @@ _Avoid_: clip, sound, sticker
 The free-form, unique label a meme is found and listed by.
 _Avoid_: title, key
 
+**Meme hub**:
+The admin's `/list` menu: the library as inline buttons, opening a meme's detail
+view to preview, rename, re-emoji or delete it, edited in place.
+_Avoid_: list, menu, dashboard
+
 **Admin**:
 The single Telegram user who curates a bot instance's library and approves users.
 _Avoid_: owner, moderator

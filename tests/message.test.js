@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import handleMessage from '../tgcloud/handlers/message.js';
-import { apiCalls, callsTo } from './fakes/sdk.js';
+import { apiCalls, BotApiError, callsTo, stubApi } from './fakes/sdk.js';
 import { ADMIN_ID, textMessage, USER_ID } from './payloads.js';
 
 describe('/start', () => {
@@ -47,4 +47,14 @@ test.each(['hello', '/startle', '', 'start'])('ignores a non-command message %j'
   await handleMessage(textMessage(text));
 
   expect(apiCalls).toEqual([]);
+});
+
+test('a failed reply is logged and does not throw', async () => {
+  const error = new BotApiError('sendMessage', 403, 'Forbidden: bot was blocked by the user');
+  stubApi('sendMessage', error);
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+  await expect(handleMessage(textMessage('/start'))).resolves.toBeUndefined();
+
+  expect(log).toHaveBeenCalledWith(expect.stringContaining(String(USER_ID)), error);
 });

@@ -4,8 +4,10 @@
 // only approved users get either.
 
 import { api } from 'sdk';
+import { loggingBotApiFailures } from '../lib/bot_api.js';
 import { REQUIRE_APPROVAL } from '../lib/config.js';
 import { leaderboardArticle } from '../lib/leaderboard.js';
+import { titleOf } from '../lib/meme_title.js';
 import { isUserApproved, registerUser, searchMemes, topMemes, topUsers } from '../lib/store.js';
 
 /** @typedef {import('@grammyjs/types').InlineQuery} InlineQuery */
@@ -26,8 +28,10 @@ const PENDING_RESULT = {
   input_message_content: { message_text: PENDING_TEXT },
 };
 
+export default loggingBotApiFailures('handlers/inline_query', handleInlineQuery);
+
 /** @param {InlineQuery} inlineQuery */
-export default async function (inlineQuery) {
+async function handleInlineQuery(inlineQuery) {
   if (REQUIRE_APPROVAL && !(await isApproved(inlineQuery))) {
     // Uncached, so the user gets memes as soon as the admin approves them.
     await answer(inlineQuery, { results: [PENDING_RESULT], cache_time: 0 });
@@ -75,7 +79,7 @@ async function leaderboardFor(query) {
     }
     case 'userstats': {
       const rows = (await topUsers()).map((u) => ({
-        label: u.displayName ?? String(u.userId),
+        label: u.displayName || String(u.userId),
         count: u.count,
       }));
       return leaderboardArticle('userstats', '🏆 Топ-3 пользователей:', rows);
@@ -86,22 +90,17 @@ async function leaderboardFor(query) {
 }
 
 /**
- * Answers the query, logging (not throwing) Bot API failures such as an expired query.
- * With approval mode on every answer is personal, so per-user state never leaks
- * through Telegram's shared inline cache.
+ * Answers the query. With approval mode on every answer is personal, so per-user
+ * state never leaks through Telegram's shared inline cache.
  * @param {InlineQuery} inlineQuery
  * @param {{ results: InlineQueryResult[], cache_time: number, next_offset?: string }} params
  */
 async function answer(inlineQuery, params) {
-  try {
-    await api.answerInlineQuery({
-      inline_query_id: inlineQuery.id,
-      ...params,
-      is_personal: REQUIRE_APPROVAL,
-    });
-  } catch (error) {
-    console.error(`Failed to answer inline query from user ${inlineQuery.from.id}`, error);
-  }
+  await api.answerInlineQuery({
+    inline_query_id: inlineQuery.id,
+    ...params,
+    is_personal: REQUIRE_APPROVAL,
+  });
 }
 
 /**
@@ -111,7 +110,7 @@ async function answer(inlineQuery, params) {
  */
 function toResult(meme) {
   const id = String(meme.id);
-  const title = meme.emoji ? `${meme.emoji} ${meme.name}` : meme.name;
+  const title = titleOf(meme);
   return meme.mediaType === 'audio'
     ? { type: 'voice', id, voice_file_id: meme.fileId, title }
     : { type: 'video', id, video_file_id: meme.fileId, title };

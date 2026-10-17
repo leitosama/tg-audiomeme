@@ -3,17 +3,21 @@
 // or a hub rename/emoji edit). The platform calls the default export with the Message.
 
 import { api } from 'sdk';
-import { CANCEL_TEXT, cancelStep, continueAdd, startAdd, stepTakesCommand } from '../lib/add.js';
+import { continueAdd, startAdd } from '../lib/add.js';
+import { loggingBotApiFailures } from '../lib/bot_api.js';
 import { commandOf, isAdminPrivate } from '../lib/commands.js';
-import { continueEdit, editStepTakesCommand, startList } from '../lib/list.js';
+import { continueEdit, startList } from '../lib/list.js';
+import { CANCEL_TEXT, cancelStep, stepTakesCommand } from '../lib/meme_input.js';
 import { startReply } from '../lib/start.js';
 import { clearStep, getStep } from '../lib/store.js';
 import { startUsers } from '../lib/users.js';
 
 /** @typedef {import('@grammyjs/types').Message} Message */
 
+export default loggingBotApiFailures('handlers/message', handleMessage);
+
 /** @param {Message} message */
-export default async function (message) {
+async function handleMessage(message) {
   const command = commandOf(message);
   const isAdmin = isAdminPrivate(message);
   const chatId = message.chat.id;
@@ -24,11 +28,7 @@ export default async function (message) {
       await cancelStep(chatId);
       return;
     }
-    if (
-      command === null ||
-      stepTakesCommand(step, command) ||
-      editStepTakesCommand(step, command)
-    ) {
+    if (command === null || stepTakesCommand(step, command)) {
       if ((await continueAdd(message, step)) || (await continueEdit(message, step))) return;
     }
     // Any other command (or a step this code no longer knows) abandons the step.

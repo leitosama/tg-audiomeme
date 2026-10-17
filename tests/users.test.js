@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import handleCallbackQuery from '../tgcloud/handlers/callback_query.js';
 import handleMessage from '../tgcloud/handlers/message.js';
 import { apiCalls, BotApiError, callsTo, stubApi } from './fakes/sdk.js';
@@ -171,11 +171,17 @@ describe('approve / revoke buttons', () => {
     await expect(tap('user:approve:5')).resolves.toBeUndefined();
   });
 
-  test('other edit failures propagate', async () => {
+  test('other edit failures are logged, not thrown', async () => {
     seedUser({ userId: 5 });
-    stubApi('editMessageText', new BotApiError('editMessageText', 400, 'Bad Request: boom'));
+    const error = new BotApiError('editMessageText', 400, 'Bad Request: boom');
+    stubApi('editMessageText', error);
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await expect(tap('user:approve:5')).rejects.toThrow('boom');
+    await expect(tap('user:approve:5')).resolves.toBeUndefined();
+
+    expect(tables.users[0].approved).toBe(true);
+    expect(log).toHaveBeenCalledWith(expect.any(String), error);
   });
 
   test('a list message too old to edit only stops the spinner', async () => {

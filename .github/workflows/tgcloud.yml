@@ -25,7 +25,7 @@ jobs:
         run: npx vitest run --coverage
 
   # The rewrite branch deploys to the dev bot instance. Each bot instance is a GitHub
-  # Environment holding the same keys: secret TGCLOUD_TOKEN, variables ADMIN_ID and
+  # Environment holding the same keys: secrets TGCLOUD_TOKEN and ADMIN_ID, variable
   # REQUIRE_APPROVAL (ADR-0003).
   deploy:
     needs: [check]

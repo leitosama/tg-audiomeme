@@ -85,7 +85,7 @@ describe('/list', () => {
 });
 
 describe('meme detail view', () => {
-  test('opening a voice meme replays it and edits the hub into its detail view', async () => {
+  test('opening a voice meme previews it and edits the hub into its detail view', async () => {
     const id = seedMeme({ name: 'Bruh', emoji: '😐', fileId: 'voice-fid', count: 7 });
 
     await tap(`meme:show:${id}`);
@@ -102,7 +102,7 @@ describe('meme detail view', () => {
     ]);
   });
 
-  test('opening a video note meme replays it as a video note', async () => {
+  test('opening a video note meme previews it as a video note', async () => {
     const id = seedMeme({ name: 'Тишина', mediaType: 'video', fileId: 'vn-fid' });
 
     await tap(`meme:show:${id}`);
@@ -112,7 +112,7 @@ describe('meme detail view', () => {
     expect(editedHub().text).toBe('🎬 Тишина\nТип: video\nОтправок: 0');
   });
 
-  test('a failed replay still opens the detail view', async () => {
+  test('a failed preview still opens the detail view', async () => {
     const id = seedMeme({ name: 'Bruh' });
     stubApi('sendVoice', new BotApiError('sendVoice', 400, 'Bad Request: wrong file identifier'));
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -170,7 +170,7 @@ describe('deleting a meme', () => {
     expect(buttonsOf(editedHub().reply_markup)).toEqual([['🎵 Тишина', `meme:show:${other}`]]);
   });
 
-  test('"no" returns to the detail view without replaying the media', async () => {
+  test('"no" returns to the detail view without previewing the media', async () => {
     const id = seedMeme({ name: 'Bruh' });
 
     await tap(`meme:detail:${id}`);
@@ -221,14 +221,27 @@ describe('stale and foreign taps', () => {
     await expect(tap('meme:list')).resolves.toBeUndefined();
   });
 
-  test('other edit failures propagate', async () => {
+  test('other edit failures are logged, not thrown', async () => {
     seedMeme({ name: 'Bruh' });
-    stubApi(
-      'editMessageText',
-      new BotApiError('editMessageText', 400, 'Bad Request: chat not found'),
-    );
+    const error = new BotApiError('editMessageText', 400, 'Bad Request: chat not found');
+    stubApi('editMessageText', error);
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    await expect(tap('meme:list')).rejects.toThrow('chat not found');
+    await expect(tap('meme:list')).resolves.toBeUndefined();
+
+    expect(log).toHaveBeenCalledWith(expect.stringContaining(String(ADMIN_ID)), error);
+  });
+
+  test('a failed answer is logged and the hub still updates', async () => {
+    const id = seedMeme({ name: 'Bruh' });
+    stubApi('answerCallbackQuery', new BotApiError('answerCallbackQuery', 400, 'query is too old'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await expect(tap(`meme:delok:${id}`)).resolves.toBeUndefined();
+
+    expect(tables.memes).toEqual([]);
+    expect(editedHub().text).toBe('Нет сохраненных мемов');
   });
 
   test('a tap on a hub message too old to edit is only answered', async () => {

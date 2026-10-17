@@ -1,10 +1,11 @@
 // The admin's meme hub: `/list` (alias `/delete`) sends the library as inline buttons;
 // taps (callback data `meme:<action>:<id>`, routed here by handlers/callback_query)
-// open a meme's detail view, replay its media and delete it, editing the one hub
+// open a meme's detail view (previewing its media) and delete it, editing the one hub
 // message in place. Rename and emoji start saved conversation steps (validated like
 // `/add`); once saved, the updated detail view is sent as a fresh hub message.
 
-import { api, BotApiError } from 'sdk';
+import { api } from 'sdk';
+import { admitAdmin, answerTap, editableMenu, showView } from './callbacks.js';
 import {
   CANCEL_KEYBOARD,
   emojiOf,
@@ -13,8 +14,8 @@ import {
   SKIP_CANCEL_KEYBOARD,
   say,
   takenNameRefusal,
-} from './add.js';
-import { ADMIN_ID } from './config.js';
+} from './meme_input.js';
+import { labelOf, titleOf } from './meme_title.js';
 import {
   clearStep,
   deleteMeme,
@@ -26,24 +27,17 @@ import {
 } from './store.js';
 
 /** @typedef {import('@grammyjs/types').CallbackQuery} CallbackQuery */
-/** @typedef {import('@grammyjs/types').InlineKeyboardMarkup} InlineKeyboardMarkup */
 /** @typedef {import('@grammyjs/types').Message} Message */
+/** @typedef {import('./callbacks.js').View} View */
 /** @typedef {import('./store.js').ConversationStep} ConversationStep */
 /** @typedef {import('./store.js').Meme} Meme */
-/** @typedef {{ text: string, reply_markup: InlineKeyboardMarkup }} View */
 
 export const MEME_CALLBACK_PREFIX = 'meme:';
 
 // Saved conversation steps for the detail view's rename and emoji buttons; their
 // data is `{ memeId }`. handlers/message routes the admin's next message here.
 const RENAME_STEP = 'edit:name';
-const EMOJI_STEP = 'edit:emoji';
-
-/** @param {Meme['mediaType']} mediaType */
-const iconOf = (mediaType) => (mediaType === 'audio' ? '🎵' : '🎬');
-
-/** @param {Meme} meme */
-const titleOf = (meme) => (meme.emoji ? `${meme.emoji} ${meme.name}` : meme.name);
+const EMOJI_STEP = 'edit:emoji'; // the `:emoji` suffix lets it take `/skip` (meme_input.js)
 
 /**
  * @param {string} text
@@ -64,9 +58,7 @@ async function listView() {
   return {
     text: '📋 Мемы (нажми для управления):',
     reply_markup: {
-      inline_keyboard: memes.map((m) => [
-        button(`${iconOf(m.mediaType)} ${titleOf(m)}`, 'show', m.id),
-      ]),
+      inline_keyboard: memes.map((m) => [button(labelOf(m), 'show', m.id)]),
     },
   };
 }
@@ -74,7 +66,7 @@ async function listView() {
 /** @param {Meme} meme @returns {View} */
 function detailView(meme) {
   return {
-    text: `${iconOf(meme.mediaType)} ${titleOf(meme)}\nТип: ${meme.mediaType}\nОтправок: ${meme.count}`,
+    text: `${labelOf(meme)}\nТип: ${meme.mediaType}\nОтправок: ${meme.count}`,
     reply_markup: {
       inline_keyboard: [
         [button('✏️ Переименовать', 'rename', meme.id), button('😀 Эмодзи', 'emoji', meme.id)],
@@ -106,35 +98,16 @@ export async function startList(chatId) {
  */
 export async function handleMemeAction(query) {
   /** @param {string} [text] */
-  const answer = (text) =>
-    api.answerCallbackQuery({ callback_query_id: query.id, ...(text ? { text } : {}) });
+  const answer = (text) => answerTap(query, text);
 
-  if (query.from.id !== ADMIN_ID) {
-    console.warn(`Non-admin user ${query.from.id} tried a meme action`);
-    await answer('❌ Доступно только админу');
-    return;
-  }
-  const hub = query.message;
-  // Messages older than 48 hours come as inaccessible (date 0) and can't be edited.
-  if (!hub || hub.date === 0) {
+  if (!(await admitAdmin(query, 'meme action'))) return;
+  const hub = editableMenu(query);
+  if (!hub) {
     await answer();
     return;
   }
   /** @param {View | Promise<View>} view */
-  const show = async (view) => {
-    try {
-      await api.editMessageText({
-        chat_id: hub.chat.id,
-        message_id: hub.message_id,
-        ...(await view),
-      });
-    } catch (error) {
-      // A double tap re-renders the same view; Telegram refuses it, nothing is lost.
-      if (!(error instanceof BotApiError && /message is not modified/i.test(error.description))) {
-        throw error;
-      }
-    }
-  };
+  const show = (view) => showView(hub, view);
 
   const [, action, rawId] = (query.data ?? '').split(':');
   if (action === 'list') {
@@ -151,10 +124,10 @@ export async function handleMemeAction(query) {
   switch (action) {
     case 'show':
       await answer();
-      await replay(hub.chat.id, meme);
+      await previewMeme(hub.chat.id, meme);
       await show(detailView(meme));
       return;
-    case 'detail': // back from the delete confirmation, without replaying again
+    case 'detail': // back from the delete confirmation, without previewing again
       await answer();
       await show(detailView(meme));
       return;
@@ -192,12 +165,12 @@ export async function handleMemeAction(query) {
 }
 
 /**
- * Replays the meme's media so the admin acts on the right meme. A failed replay
+ * Sends the meme's media so the admin acts on the right meme. A failed preview
  * (e.g. a stale file ID) doesn't stop the detail view from opening.
  * @param {number} chatId
  * @param {Meme} meme
  */
-async function replay(chatId, meme) {
+async function previewMeme(chatId, meme) {
   try {
     if (meme.mediaType === 'audio') {
       await api.sendVoice({ chat_id: chatId, voice: meme.fileId });
@@ -205,21 +178,13 @@ async function replay(chatId, meme) {
       await api.sendVideoNote({ chat_id: chatId, video_note: meme.fileId });
     }
   } catch (error) {
-    console.error(`Failed to replay meme ${meme.id}`, error);
+    console.error(`Failed to preview meme ${meme.id}`, error);
   }
 }
 
 /** @typedef {{ memeId: number }} EditData */
 
-/**
- * Whether the pending step takes a message starting with this bot command as its
- * input: only `/skip` on the emoji step, which removes the emoji.
- * @param {ConversationStep} step
- * @param {string} command
- */
-export function editStepTakesCommand(step, command) {
-  return step.name === EMOJI_STEP && command === 'skip';
-}
+const MEME_GONE = '❌ Мем не найден';
 
 /**
  * Feeds the admin's message to a pending hub edit step (rename or emoji). Returns
@@ -234,7 +199,7 @@ export async function continueEdit(message, step) {
   const meme = await getMeme(/** @type {EditData} */ (step.data).memeId);
   if (!meme) {
     await clearStep(chatId);
-    await say(chatId, '❌ Мем не найден', REMOVE_KEYBOARD);
+    await say(chatId, MEME_GONE, REMOVE_KEYBOARD);
     return true;
   }
   if (step.name === RENAME_STEP) {
@@ -257,13 +222,18 @@ async function receiveNewName(message, meme) {
     return;
   }
   if (!(await renameMeme(meme.id, name))) {
-    await say(chatId, takenNameRefusal(name), CANCEL_KEYBOARD);
+    // Not renamed: the name is taken, or the meme was deleted since the step began.
+    if (await getMeme(meme.id)) {
+      await say(chatId, takenNameRefusal(name), CANCEL_KEYBOARD);
+    } else {
+      await clearStep(chatId);
+      await say(chatId, MEME_GONE, REMOVE_KEYBOARD);
+    }
     return;
   }
   await clearStep(chatId);
   console.log(`Admin ${chatId} renamed meme ${meme.id} to '${name}'`);
-  const updated = { ...meme, name };
-  await showSaved(chatId, `✅ Переименован в '${titleOf(updated)}'`, updated);
+  await showSaved(chatId, `✅ Переименован в '${name}'`, { ...meme, name });
 }
 
 /**
