@@ -158,35 +158,39 @@ describe('a conversion over 1.5 MB', () => {
   };
 
   /**
-   * A fake encoder returning outputs of the given sizes in turn; records each plan.
+   * A fake encoder returning outputs of the given sizes in turn; records each plan and
+   * output. (Outputs are compared by identity: deep-comparing megabytes is slow on CI.)
    * @param {number[]} sizes
    */
   function encoder(sizes) {
     /** @type {import('../converter/plan.js').Plan[]} */
     const plans = [];
+    /** @type {Uint8Array[]} */
+    const outputs = [];
     /** @param {import('../converter/plan.js').Plan} plan */
     const encode = async (plan) => {
       plans.push(plan);
-      return new Uint8Array(sizes[plans.length - 1]);
+      outputs.push(new Uint8Array(sizes[plans.length - 1]));
+      return outputs[outputs.length - 1];
     };
-    return { encode, plans };
+    return { encode, plans, outputs };
   }
 
   test('is not retried when the first output fits, even at exactly 1.5 MB', async () => {
-    const { encode, plans } = encoder([1_500_000]);
+    const { encode, plans, outputs } = encoder([1_500_000]);
 
     const result = await convertWithinBudget(notePlan, encode);
 
-    expect(result).toEqual({ bytes: new Uint8Array(1_500_000) });
+    expect('bytes' in result && result.bytes).toBe(outputs[0]);
     expect(plans).toEqual([notePlan]);
   });
 
   test('is retried once at 500k video', async () => {
-    const { encode, plans } = encoder([1_500_001, 1_200_000]);
+    const { encode, plans, outputs } = encoder([1_500_001, 1_200_000]);
 
     const result = await convertWithinBudget(notePlan, encode);
 
-    expect(result).toEqual({ bytes: new Uint8Array(1_200_000) });
+    expect('bytes' in result && result.bytes).toBe(outputs[1]);
     expect(plans.map((p) => p.kind === 'videoNote' && p.videoBitrate)).toEqual([650_000, 500_000]);
   });
 
