@@ -1,4 +1,4 @@
-import { boolean, check, integer, json, sql, table, text } from 'sdk/db';
+import { boolean, check, index, integer, json, sql, table, text } from 'sdk/db';
 
 // Same columns and meaning as the Python bot's SQLite schema, so a bot instance's
 // exported data imports as a straight copy. The platform forbids foreign keys.
@@ -36,3 +36,17 @@ export const conversationSteps = table('conversation_steps', {
   data: json('data').notNull(),
   updatedAt: text('updated_at').default(sql`(CURRENT_TIMESTAMP)`),
 });
+
+// Sends already counted, keyed by the sent inline message's ID, so a send Telegram
+// delivers twice is counted once. `seen_at` is epoch milliseconds; entries older than
+// seven days are pruned.
+export const sentMessages = table(
+  'sent_messages',
+  {
+    id: text('id').primaryKey(),
+    seenAt: integer('seen_at').notNull(),
+  },
+  (t) => ({
+    seenAtIdx: index('sent_messages_seen_at').on(t.seenAt),
+  }),
+);
