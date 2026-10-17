@@ -83,3 +83,19 @@ export async function searchMemes(query) {
     .sort((a, b) => b.count - a.count || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     .map((m) => ({ ...m }));
 }
+
+// --- Meme hub (/list, issue #18) ---
+
+/**
+ * @param {number} id
+ * @returns {Promise<Meme | null>}
+ */
+export async function getMeme(id) {
+  const meme = tables.memes.find((m) => m.id === id);
+  return meme ? { ...meme } : null;
+}
+
+/** @param {number} id */
+export async function deleteMeme(id) {
+  tables.memes = tables.memes.filter((m) => m.id !== id);
+}

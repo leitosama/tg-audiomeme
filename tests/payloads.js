@@ -49,3 +49,25 @@ export function inlineQuery(query, { from = USER_ID, offset = '' } = {}) {
   const user = { id: from, is_bot: false, first_name: `User ${from}` };
   return { id: `iq-${from}`, from: user, query, offset, chat_type: 'sender' };
 }
+
+// --- Callback queries (issue #18) ---
+
+/** @typedef {import('@grammyjs/types').CallbackQuery} CallbackQuery */
+
+/** The bot's message the admin's /list hub lives in. */
+export const HUB_MESSAGE_ID = 42;
+
+/**
+ * A tap on an inline button of the bot's message `HUB_MESSAGE_ID` in the tapper's
+ * private chat, as `handlers/callback_query` receives it.
+ * @param {string} data
+ * @param {{ from?: number }} [opts]
+ * @returns {CallbackQuery}
+ */
+export function callbackQuery(data, { from = ADMIN_ID } = {}) {
+  const user = { id: from, is_bot: false, first_name: `User ${from}` };
+  /** @type {import('@grammyjs/types').Chat.PrivateChat} */
+  const chat = { id: from, type: 'private', first_name: user.first_name };
+  const message = { message_id: HUB_MESSAGE_ID, date: 1_700_000_000, chat, text: '📋 Мемы' };
+  return { id: `cb-${from}`, from: user, chat_instance: 'ci', message, data };
+}

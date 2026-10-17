@@ -1,9 +1,11 @@
-// handlers/message — runs on each `message` update: bot commands and the admin's
+// handlers/message — runs on each `message` update: bot commands (/start, /add,
+// /list and its /delete alias) and the admin's
 // pending conversation step (/add). The platform calls the default export with the Message.
 
 import { api } from 'sdk';
 import { CANCEL_TEXT, cancelStep, continueAdd, startAdd, stepTakesCommand } from '../lib/add.js';
 import { commandOf, isAdminPrivate } from '../lib/commands.js';
+import { startList } from '../lib/list.js';
 import { startReply } from '../lib/start.js';
 import { clearStep, getStep } from '../lib/store.js';
 
@@ -37,6 +39,10 @@ export default async function (message) {
       return;
     case 'add':
       if (isAdmin) await startAdd(chatId);
+      return;
+    case 'list':
+    case 'delete':
+      if (isAdmin) await startList(chatId);
       return;
   }
 }
