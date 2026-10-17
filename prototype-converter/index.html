@@ -22,18 +22,24 @@
     </section>
     <section>
       <h2>2. Лимит тела запроса</h2>
-      <button id="limit">Проверить 1/2/4/8/16/32 МБ</button>
+      <button id="limit">Проверить 1/1.25/1.5/1.75/2/2.5 МБ</button>
     </section>
     <section>
       <h2>3. Конвертация</h2>
       <input id="file" type="file" accept="audio/*,video/*" /><br />
       <select id="kind">
         <option value="voice">→ голосовое (opus 64k)</option>
-        <option value="videonote">→ кружок (640, 380k, 15 с)</option>
+        <option value="videonote">→ кружок (640, 15 с)</option>
       </select>
       <select id="engine">
         <option value="webcodecs">WebCodecs (mediabunny)</option>
         <option value="ffmpeg">ffmpeg.wasm</option>
+      </select>
+      <select id="vbps">
+        <option value="380000">видео 380k</option>
+        <option value="500000">видео 500k</option>
+        <option value="650000" selected>видео 650k</option>
+        <option value="800000">видео 800k</option>
       </select>
       <select id="preset">
         <option>fast</option>

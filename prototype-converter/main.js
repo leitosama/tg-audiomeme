@@ -59,8 +59,8 @@ $('env').textContent = JSON.stringify(results.env, null, 1);
 show();
 
 $('limit').onclick = async () => {
-  for (const mb of [1, 2, 4, 8, 16, 32]) {
-    const bytes = new Uint8Array(mb * 1048576);
+  for (const mb of [1, 1.25, 1.5, 1.75, 2, 2.5]) {
+    const bytes = new Uint8Array(Math.round(mb * 1048576));
     for (let i = 0; i < bytes.length; i += 65536) {
       crypto.getRandomValues(bytes.subarray(i, i + 65536));
     }
@@ -165,7 +165,7 @@ async function convertWebCodecs(file, kind, entry) {
     video:
       kind === 'voice'
         ? { discard: true }
-        : { width: side, height: side, fit: 'cover', codec: 'avc', bitrate: VIDEO_BPS },
+        : { width: side, height: side, fit: 'cover', codec: 'avc', bitrate: Number($('vbps').value) },
     audio:
       kind === 'voice'
         ? { codec: 'opus', bitrate: VOICE_BPS, numberOfChannels: 1 }
@@ -189,7 +189,7 @@ $('convert').onclick = async () => {
   const kind = $('kind').value;
   const engine = $('engine').value;
   const preset = $('preset').value;
-  const entry = { name: file.name, type: file.type, inMB: +(file.size / 1048576).toFixed(2), kind, engine };
+  const entry = { name: file.name, type: file.type, inMB: +(file.size / 1048576).toFixed(2), kind, engine, vbps: Number($('vbps').value) };
   if (engine === 'ffmpeg' && kind === 'videonote') entry.preset = preset;
   results.conversions.push(entry);
   $('convert').disabled = true;
