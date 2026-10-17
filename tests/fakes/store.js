@@ -84,6 +84,22 @@ export async function searchMemes(query) {
     .map((m) => ({ ...m }));
 }
 
+// --- Leaderboards (issue #17) ---
+
+/** @returns {Promise<Meme[]>} */
+export async function topMemes() {
+  return (await searchMemes('')).filter((m) => m.count > 0).slice(0, 3);
+}
+
+/** @returns {Promise<User[]>} */
+export async function topUsers() {
+  return tables.users
+    .filter((u) => u.count > 0)
+    .sort((a, b) => b.count - a.count || a.userId - b.userId)
+    .slice(0, 3)
+    .map((u) => ({ ...u }));
+}
+
 // --- Meme hub (/list, issue #18) ---
 
 /**
@@ -188,4 +204,17 @@ export async function setUserApproved(userId, approved) {
   const user = tables.users.find((u) => u.userId === userId);
   if (user) user.approved = approved;
   return Boolean(user);
+}
+
+// --- Legacy import (issue #21) ---
+
+/** @returns {Promise<{ memes: number, users: number }>} */
+export async function countMemesAndUsers() {
+  return { memes: tables.memes.length, users: tables.users.length };
+}
+
+/** @param {{ memes: import('../../tgcloud/lib/store.js').LegacyMeme[], users: User[] }} rows */
+export async function insertLegacyRows(rows) {
+  tables.memes.push(...structuredClone(rows.memes));
+  tables.users.push(...structuredClone(rows.users));
 }

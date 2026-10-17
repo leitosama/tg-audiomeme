@@ -91,6 +91,28 @@ describe('approval mode on', () => {
       results: [{ type: 'voice', id: '1', voice_file_id: 'file-1', title: 'hit' }],
     });
   });
+
+  test.each(['stats', 'userstats'])(
+    'an approved user gets the %s leaderboard, personal',
+    async (q) => {
+      seedUser({ approved: true });
+
+      await handleInlineQuery(inlineQuery(q));
+
+      expect(answer()).toMatchObject({ is_personal: true, results: [{ type: 'article', id: q }] });
+    },
+  );
+
+  test.each(['stats', 'userstats'])(
+    'an unapproved user asking for %s gets the pending article',
+    async (q) => {
+      seedUser({ approved: false });
+
+      await handleInlineQuery(inlineQuery(q));
+
+      expect(answer().results.map((/** @type {any} */ r) => r.id)).toEqual(['approval-required']);
+    },
+  );
 });
 
 describe('approval mode off', () => {
