@@ -4,7 +4,7 @@
 
 import { db } from 'sdk';
 import { asc, desc, eq, sql } from 'sdk/db';
-import { conversationSteps, memes } from '../schema.js';
+import { conversationSteps, memes, users } from '../schema.js';
 
 /**
  * @typedef {object} Meme
@@ -113,4 +113,41 @@ export async function searchMemes(query) {
   return rows.filter(
     (m) => m.name.toLowerCase().includes(needle) || m.emoji.toLowerCase().includes(needle),
   );
+}
+
+// --- Legacy import (issue #21) ---
+
+/**
+ * A meme as the Python bot stored it, with its creation date (SQLite `CURRENT_TIMESTAMP`
+ * text, or null).
+ * @typedef {Meme & { createdAt: string | null }} LegacyMeme
+ */
+
+/** Rows per INSERT, keeping each statement well under SQLite's bound-parameter limit. */
+const IMPORT_CHUNK = 100;
+
+/**
+ * How many rows the memes and users tables hold.
+ * @returns {Promise<{ memes: number, users: number }>}
+ */
+export async function countMemesAndUsers() {
+  return { memes: await db.$count(memes), users: await db.$count(users) };
+}
+
+/**
+ * Inserts memes and users exactly as given, ids included.
+ * @param {{ memes: LegacyMeme[], users: User[] }} rows
+ */
+export async function insertLegacyRows(rows) {
+  for (const [target, list] of [
+    [memes, rows.memes],
+    [users, rows.users],
+  ]) {
+    for (let i = 0; i < list.length; i += IMPORT_CHUNK) {
+      await db
+        .insert(target)
+        .values(list.slice(i, i + IMPORT_CHUNK))
+        .run();
+    }
+  }
 }

@@ -83,3 +83,16 @@ export async function searchMemes(query) {
     .sort((a, b) => b.count - a.count || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     .map((m) => ({ ...m }));
 }
+
+// --- Legacy import (issue #21) ---
+
+/** @returns {Promise<{ memes: number, users: number }>} */
+export async function countMemesAndUsers() {
+  return { memes: tables.memes.length, users: tables.users.length };
+}
+
+/** @param {{ memes: import('../../tgcloud/lib/store.js').LegacyMeme[], users: User[] }} rows */
+export async function insertLegacyRows(rows) {
+  tables.memes.push(...structuredClone(rows.memes));
+  tables.users.push(...structuredClone(rows.users));
+}
