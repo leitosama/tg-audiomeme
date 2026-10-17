@@ -2,37 +2,25 @@
 // saved with the store between updates; handlers/message routes the admin's messages
 // here while a step is pending. Only voice messages and video notes are memes (ADR-0002).
 
-import { api } from 'sdk';
+import {
+  CANCEL_KEYBOARD,
+  emojiOf,
+  nameOf,
+  REMOVE_KEYBOARD,
+  SKIP_CANCEL_KEYBOARD,
+  say,
+  takenNameRefusal,
+} from './meme_input.js';
+import { labelOf } from './meme_title.js';
 import { addMeme, clearStep, memeNameExists, setStep } from './store.js';
 
 /** @typedef {import('@grammyjs/types').Message} Message */
-/** @typedef {import('@grammyjs/types').ReplyKeyboardMarkup} ReplyKeyboardMarkup */
-/** @typedef {import('@grammyjs/types').ReplyKeyboardRemove} ReplyKeyboardRemove */
 /** @typedef {import('./store.js').ConversationStep} ConversationStep */
 /** @typedef {import('./store.js').Meme} Meme */
 
-export const CANCEL_TEXT = '❌ Отмена';
-const MAX_NAME_LENGTH = 100;
-const MAX_EMOJI_LENGTH = 16;
-
 const MEDIA_STEP = 'add:media';
 const NAME_STEP = 'add:name';
-const EMOJI_STEP = 'add:emoji';
-
-/** @type {ReplyKeyboardMarkup} */
-export const CANCEL_KEYBOARD = {
-  keyboard: [[CANCEL_TEXT]],
-  resize_keyboard: true,
-  one_time_keyboard: true,
-};
-/** @type {ReplyKeyboardMarkup} */
-export const SKIP_CANCEL_KEYBOARD = {
-  keyboard: [['/skip', CANCEL_TEXT]],
-  resize_keyboard: true,
-  one_time_keyboard: true,
-};
-/** @type {ReplyKeyboardRemove} */
-export const REMOVE_KEYBOARD = { remove_keyboard: true };
+const EMOJI_STEP = 'add:emoji'; // the `:emoji` suffix lets it take `/skip` (meme_input.js)
 
 const MEDIA_PROMPT =
   'Перешли или запиши голосовое сообщение или видеосообщение-кружок (/cancel — отмена):';
@@ -41,82 +29,10 @@ const MEDIA_REFUSAL =
 const NAME_PROMPT = 'Теперь введи название мема (любой текст):';
 const EMOJI_PROMPT = 'Теперь пришли эмодзи для мема (/skip — без эмодзи):';
 
-/**
- * @param {number} chatId
- * @param {string} text
- * @param {ReplyKeyboardMarkup | ReplyKeyboardRemove} replyMarkup
- */
-export async function say(chatId, text, replyMarkup) {
-  await api.sendMessage({ chat_id: chatId, text, reply_markup: replyMarkup });
-}
-
-/** Length in code points, as the Python bot counted it. @param {string} s */
-const lengthOf = (s) => [...s].length;
-
-/**
- * The meme name a message gives (trimmed), or why it's refused: not text, empty or
- * too long. Uniqueness is the caller's check. Shared with the hub's rename.
- * @param {Message} message
- * @returns {string | { refusal: string }}
- */
-export function nameOf(message) {
-  if (message.text === undefined) return { refusal: '❌ Пришли название текстом:' };
-  const name = message.text.trim();
-  if (!name || lengthOf(name) > MAX_NAME_LENGTH) {
-    return {
-      refusal: `❌ Название должно быть от 1 до ${MAX_NAME_LENGTH} символов. Попробуй снова:`,
-    };
-  }
-  return name;
-}
-
-/** @param {string} name */
-export const takenNameRefusal = (name) =>
-  `❌ Мем с названием '${name}' уже существует. Введи другое название:`;
-
-/**
- * The emoji a message gives ('' for `/skip`), or why it's refused. Shared with the
- * hub's emoji edit.
- * @param {Message} message
- * @returns {string | { refusal: string }}
- */
-export function emojiOf(message) {
-  if (message.text === undefined) {
-    return { refusal: '❌ Пришли эмодзи текстом (/skip — без эмодзи):' };
-  }
-  const text = message.text.trim();
-  const emoji = /^\/skip(?:@\w+)?$/i.test(text) ? '' : text;
-  if (lengthOf(emoji) > MAX_EMOJI_LENGTH) {
-    return {
-      refusal: `❌ Эмодзи должно быть не длиннее ${MAX_EMOJI_LENGTH} символов. Попробуй снова:`,
-    };
-  }
-  return emoji;
-}
-
 /** Starts `/add` in the admin's chat: asks for the media. @param {number} chatId */
 export async function startAdd(chatId) {
   await setStep(chatId, MEDIA_STEP, {});
   await say(chatId, MEDIA_PROMPT, CANCEL_KEYBOARD);
-}
-
-/**
- * Whether the pending step takes a message starting with this bot command as its
- * input; any other command abandons the step. Only `/skip` on the emoji step does.
- * @param {ConversationStep} step
- * @param {string} command
- */
-export function stepTakesCommand(step, command) {
-  return step.name === EMOJI_STEP && command === 'skip';
-}
-
-/**
- * Abandons the pending step and acknowledges it.
- * @param {number} chatId
- */
-export async function cancelStep(chatId) {
-  await clearStep(chatId);
-  await say(chatId, 'Отменено', REMOVE_KEYBOARD);
 }
 
 /**
@@ -197,7 +113,5 @@ async function receiveEmoji(message, data) {
     await say(chatId, `❌ Мем с названием '${name}' уже существует`, REMOVE_KEYBOARD);
     return;
   }
-  const icon = mediaType === 'audio' ? '🎵' : '🎬';
-  const title = emoji ? `${emoji} ${name}` : name;
-  await say(chatId, `✅ Мем '${icon} ${title}' добавлен!`, REMOVE_KEYBOARD);
+  await say(chatId, `✅ Мем '${labelOf({ name, emoji, mediaType })}' добавлен!`, REMOVE_KEYBOARD);
 }

@@ -57,7 +57,7 @@ describe('renaming a meme from the hub', () => {
     expect(memeOf(id)?.name).toBe('Bruh moment');
     expect(pendingStep()).toBeUndefined();
     const [, confirm, detail] = callsTo('sendMessage');
-    expect(confirm.text).toBe("✅ Переименован в '😐 Bruh moment'");
+    expect(confirm.text).toBe("✅ Переименован в 'Bruh moment'");
     expect(confirm.reply_markup).toEqual({ remove_keyboard: true });
     expect(detail.chat_id).toBe(ADMIN_ID);
     expect(detail.text).toBe('🎵 😐 Bruh moment\nТип: audio\nОтправок: 3');

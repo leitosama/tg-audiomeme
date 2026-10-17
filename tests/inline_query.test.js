@@ -305,6 +305,14 @@ describe('the userstats leaderboard', () => {
     expect(answer().cache_time).toBe(0);
   });
 
+  test('labels a user with an empty display name by their user id', async () => {
+    seedUser({ userId: 42, displayName: '', approved: false, count: 1 });
+
+    await handleInlineQuery(inlineQuery('userstats'));
+
+    expect(leaderboard(answer()).text).toBe('🏆 Топ-3 пользователей:\n1. 42 — 1');
+  });
+
   test('labels a user with no display name by their user id', async () => {
     seedUser({ userId: 42, displayName: null, approved: false, count: 1 });
 

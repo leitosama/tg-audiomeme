@@ -42,6 +42,15 @@ test('a send by a known user adds to their count and refreshes their display nam
   ]);
 });
 
+test('a send of a meme deleted since the query counts for neither meme nor user', async () => {
+  seedMeme(1, 3);
+
+  await handleChosen(...chosenResult('9', { inlineMessageId: 'im-1' }));
+
+  expect(memeCount(1)).toBe(3);
+  expect(tables.users).toEqual([]);
+});
+
 test.each(['stats', 'userstats', 'pending', '1a', ''])(
   'choosing the non-meme result %j changes nothing',
   async (id) => {

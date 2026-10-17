@@ -18,6 +18,7 @@ export function resetStore() {
   tables.memes = [];
   tables.users = [];
   tables.steps = [];
+  sentMessages.clear();
 }
 
 // --- Conversation steps and adding memes (/add, issue #14) ---
@@ -142,8 +143,8 @@ export async function setMemeEmoji(id, emoji) {
 // --- Send counting (issue #16) ---
 
 /**
- * Sent-message IDs already counted, with when they were seen (epoch ms). Kept apart
- * from `tables` so other features' resets don't need to know about it.
+ * Sent-message IDs already counted, with when they were seen (epoch ms); `resetStore`
+ * clears it too.
  * @type {Map<string, number>}
  */
 export const sentMessages = new Map();

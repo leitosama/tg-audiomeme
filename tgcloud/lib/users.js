@@ -2,13 +2,13 @@
 // approve / revoke button each (callback data `user:<action>:<id>`, routed here by
 // handlers/callback_query). A tap updates the list message in place.
 
-import { api, BotApiError } from 'sdk';
-import { ADMIN_ID } from './config.js';
+import { api } from 'sdk';
+import { admitAdmin, answerTap, editableMenu, showView } from './callbacks.js';
 import { listUsers, setUserApproved } from './store.js';
 
 /** @typedef {import('@grammyjs/types').CallbackQuery} CallbackQuery */
 /** @typedef {import('@grammyjs/types').InlineKeyboardMarkup} InlineKeyboardMarkup */
-/** @typedef {{ text: string, reply_markup: InlineKeyboardMarkup }} View */
+/** @typedef {import('./callbacks.js').View} View */
 
 export const USER_CALLBACK_PREFIX = 'user:';
 
@@ -47,14 +47,9 @@ export async function startUsers(chatId) {
  */
 export async function handleUserAction(query) {
   /** @param {string} [text] */
-  const answer = (text) =>
-    api.answerCallbackQuery({ callback_query_id: query.id, ...(text ? { text } : {}) });
+  const answer = (text) => answerTap(query, text);
 
-  if (query.from.id !== ADMIN_ID) {
-    console.warn(`Non-admin user ${query.from.id} tried a user action`);
-    await answer('❌ Доступно только админу');
-    return;
-  }
+  if (!(await admitAdmin(query, 'user action'))) return;
   const [, action, rawId] = (query.data ?? '').split(':');
   if (action !== 'approve' && action !== 'revoke') {
     await answer();
@@ -69,19 +64,6 @@ export async function handleUserAction(query) {
     await answer('Пользователь не найден');
   }
 
-  const list = query.message;
-  // Messages older than 48 hours come as inaccessible (date 0) and can't be edited.
-  if (!list || list.date === 0) return;
-  try {
-    await api.editMessageText({
-      chat_id: list.chat.id,
-      message_id: list.message_id,
-      ...(await usersView()),
-    });
-  } catch (error) {
-    // A double tap re-renders the same list; Telegram refuses it, nothing is lost.
-    if (!(error instanceof BotApiError && /message is not modified/i.test(error.description))) {
-      throw error;
-    }
-  }
+  const list = editableMenu(query);
+  if (list) await showView(list, usersView());
 }

@@ -7,6 +7,11 @@
 //
 // The whole export is checked before anything is written, and the import refuses to
 // run unless both tables are empty, so a bad file or a second run changes nothing.
+// The platform's db has no transactions, so the insert itself (memes, then users, in
+// chunks of 100 rows) isn't atomic: if it fails part-way, the rows already written
+// stay and every retry is refused. To recover, empty both tables by hand (e.g.
+// `DELETE FROM memes` and `DELETE FROM users` via `db.run` from a throwaway module run
+// with `npx tgcloud run`), then run the import again.
 
 import { EndpointError } from 'sdk';
 import { countMemesAndUsers, insertLegacyRows } from '../lib/store.js';
