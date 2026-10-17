@@ -3,6 +3,7 @@
 
 import { api } from 'sdk';
 import { handleMemeAction, MEME_CALLBACK_PREFIX } from '../lib/list.js';
+import { handleUserAction, USER_CALLBACK_PREFIX } from '../lib/users.js';
 
 /** @typedef {import('@grammyjs/types').CallbackQuery} CallbackQuery */
 
@@ -10,6 +11,10 @@ import { handleMemeAction, MEME_CALLBACK_PREFIX } from '../lib/list.js';
 export default async function (query) {
   if (query.data?.startsWith(MEME_CALLBACK_PREFIX)) {
     await handleMemeAction(query);
+    return;
+  }
+  if (query.data?.startsWith(USER_CALLBACK_PREFIX)) {
+    await handleUserAction(query);
     return;
   }
   // A button this code no longer knows: stop the client's loading spinner.
