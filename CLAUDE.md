@@ -79,9 +79,12 @@ called as plain functions; assert on the mock bot's calls. No real Telegram API 
   PRs into `main`.
 - On the `claude/tgcloud-rewrite` branch, a JavaScript rewrite for Telegram's serverless
   platform (tgcloud) is growing beside the Python bot (spec: issue #12). Platform rules
-  are in `AGENTS.md` and `docs/tgcloud-sdk.md`. `npm run check` runs Biome, `tsc` and
-  Vitest with coverage; `npm run config` generates the gitignored `tgcloud/lib/config.js`
-  from `.env`. Its CI (`.github/workflows/tgcloud.yml`) deploys pushes to the rewrite
+  are in `AGENTS.md` and `docs/tgcloud-sdk.md`. `npm run check` runs Biome, `tsc` (bot and
+  `converter/`), Vitest with coverage and the build; `npm run config` generates the
+  gitignored `tgcloud/lib/config.js` from `.env`. The Converter (`converter/`, Vite +
+  mediabunny; decisions in the pure `converter/plan.js`) is the Mini App: `npm run build`
+  writes it to `dist/`, which `tgcloud.jsonc` deploys; its endpoint is
+  `tgcloud/endpoints/addConvertedMedia.js`. Its CI (`.github/workflows/tgcloud.yml`) deploys pushes to the rewrite
   branch to the `dev` GitHub Environment. Feature PRs target `claude/tgcloud-rewrite`.
 
 ## Agent skills

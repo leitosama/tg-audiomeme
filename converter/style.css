@@ -1,0 +1,246 @@
+/* Telegram's theme variables, so the Converter matches the client's light or dark
+   theme; the fallbacks are for opening the page outside Telegram. */
+:root {
+  --bg: var(--tg-theme-bg-color, #ffffff);
+  --text: var(--tg-theme-text-color, #000000);
+  --hint: var(--tg-theme-hint-color, #8e8e93);
+  --accent: var(--tg-theme-button-color, #2481cc);
+  --accent-text: var(--tg-theme-button-text-color, #ffffff);
+  --surface: var(--tg-theme-secondary-bg-color, #efeff4);
+  --danger: var(--tg-theme-destructive-text-color, #e53935);
+  --disc: min(64vw, 280px);
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tg]) {
+    --bg: #17212b;
+    --text: #f5f5f5;
+    --hint: #708499;
+    --accent: #5288c1;
+    --surface: #232e3c;
+    --danger: #ec3942;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    17px / 1.4 -apple-system,
+    system-ui,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  min-height: var(--tg-viewport-stable-height, 100dvh);
+  padding: 32px 16px calc(24px + env(safe-area-inset-bottom));
+  text-align: center;
+}
+
+/* The disc is the result: a video plays inside it cropped exactly as the video note
+   will be; the ring around it fills with the conversion's progress. */
+.stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: calc(var(--disc) + 20px);
+  aspect-ratio: 1;
+  cursor: pointer;
+}
+
+.stage:has(input:disabled) {
+  cursor: default;
+}
+
+.disc {
+  display: grid;
+  place-items: center;
+  width: var(--disc);
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.stage:has(input:focus-visible) .disc {
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.disc video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.glyph {
+  color: var(--accent);
+  font-size: calc(var(--disc) * 0.3);
+  font-weight: 200;
+  line-height: 1;
+}
+
+.glyph.is-audio {
+  font-size: calc(var(--disc) * 0.22);
+  font-weight: 400;
+}
+
+.ring {
+  position: absolute;
+  inset: 0;
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+
+.ring circle {
+  fill: none;
+  stroke-width: 2.5;
+}
+
+.ring-track {
+  stroke: transparent;
+}
+
+.ring-fill {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-dasharray: 0 100;
+  transition: stroke-dasharray 0.2s linear;
+}
+
+.caption {
+  margin: 0;
+  max-width: 32ch;
+  color: var(--hint);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.choice {
+  display: flex;
+  margin: 0;
+  padding: 2px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.choice label {
+  position: relative;
+}
+
+.choice input {
+  position: absolute;
+  opacity: 0;
+}
+
+.choice span {
+  display: block;
+  padding: 7px 18px;
+  border-radius: 8px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.choice input:checked + span {
+  background: var(--bg);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.15);
+  font-weight: 600;
+}
+
+.choice input:focus-visible + span {
+  outline: 2px solid var(--accent);
+}
+
+.choice input:disabled + span {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.note,
+.status {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 15px;
+}
+
+.status:empty {
+  display: none;
+}
+
+.status.is-error {
+  color: var(--danger);
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  max-width: 360px;
+  margin-top: auto;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+.primary {
+  padding: 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.link {
+  padding: 10px;
+  border: 0;
+  background: none;
+  color: var(--accent);
+}
+
+button:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+[hidden] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ring-fill {
+    transition: none;
+  }
+}

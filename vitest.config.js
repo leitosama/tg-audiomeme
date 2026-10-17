@@ -42,7 +42,7 @@ export default defineConfig({
     setupFiles: ['tests/setup.js'],
     coverage: {
       provider: 'v8',
-      include: ['tgcloud/**/*.js', 'scripts/tgcloud/**/*.js'],
+      include: ['tgcloud/**/*.js', 'scripts/tgcloud/**/*.js', 'converter/plan.js'],
       exclude: ['tgcloud/lib/store.js', 'tgcloud/lib/config.js', 'tgcloud/schema.js'],
       thresholds: { lines: 80, functions: 80, branches: 80, statements: 80 },
     },

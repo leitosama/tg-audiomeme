@@ -7,17 +7,20 @@
     "@tgcloud/cli": "0.2.0",
     "@types/node": "26.6.5",
     "@vitest/coverage-v8": "5.0.4",
+    "mediabunny": "1.61.6",
     "typescript": "7.0.2",
+    "vite": "8.3.4",
     "vitest": "5.0.4"
   },
   "scripts": {
     "config": "node --env-file=.env scripts/gen-config.js",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "typecheck": "tsc",
+    "typecheck": "tsc && tsc -p converter",
     "test": "vitest run --coverage",
-    "check": "biome ci . && tsc && vitest run --coverage",
-    "deploy": "tgcloud push",
+    "build": "vite build",
+    "check": "biome ci . && tsc && tsc -p converter && vitest run --coverage && vite build",
+    "deploy": "vite build && tgcloud push",
     "status": "tgcloud status",
     "run": "tgcloud run"
   },

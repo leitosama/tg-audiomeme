@@ -1,0 +1,11 @@
+{
+  // Type-checks the Converter, a browser app (the root tsconfig.json is for the bot,
+  // which has no DOM). `npm run typecheck` runs both.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": [],
+    "rootDirs": []
+  },
+  "include": [".", "../vite.config.js"]
+}

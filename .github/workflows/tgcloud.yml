@@ -20,13 +20,15 @@ jobs:
       - name: Lint + format
         run: npx biome ci .
       - name: Typecheck
-        run: npx tsc
+        run: npx tsc && npx tsc -p converter
       - name: Test
         run: npx vitest run --coverage
+      - name: Build the Converter
+        run: npm run build
 
   # The rewrite branch deploys to the dev bot instance. Each bot instance is a GitHub
   # Environment holding the same keys: secrets TGCLOUD_TOKEN and ADMIN_ID, variable
-  # REQUIRE_APPROVAL (ADR-0003).
+  # REQUIRE_APPROVAL (ADR-0003). The Converter's Mini App URL is derived from the token.
   deploy:
     needs: [check]
     if: github.event_name == 'push' && github.ref == 'refs/heads/claude/tgcloud-rewrite'
@@ -49,6 +51,8 @@ jobs:
       - run: npm ci
       - name: Generate config
         run: node scripts/gen-config.js
+      - name: Build the Converter
+        run: npm run build
       # CI has no .tgcloud/ sync state, so the repo is the source of truth: --force
       # replaces whatever is deployed (including modules deleted here).
       - name: Push modules
