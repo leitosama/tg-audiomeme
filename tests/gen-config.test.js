@@ -22,16 +22,16 @@ test('refuses an approval mode other than true/false', () => {
   );
 });
 
-test('derives the Mini App URL from the tgcloud token, leaving out its secret', () => {
+test('derives the Converter URL from the tgcloud token, leaving out its secret', () => {
   const source = renderConfig({ ADMIN_ID: '1', TGCLOUD_TOKEN: 'app8757896246:s3cr3t' });
 
-  expect(source).toContain('export const MINI_APP_URL = "https://app8757896246.tgcloud.ai/";');
+  expect(source).toContain('export const CONVERTER_URL = "https://app8757896246.tgcloud.ai/";');
   expect(source).not.toContain('s3cr3t');
 });
 
-test.each([undefined, ''])('leaves the Mini App URL empty without a token (%j)', (token) => {
+test.each([undefined, ''])('leaves the Converter URL empty without a token (%j)', (token) => {
   expect(renderConfig({ ADMIN_ID: '1', TGCLOUD_TOKEN: token })).toContain(
-    'export const MINI_APP_URL = "";',
+    'export const CONVERTER_URL = "";',
   );
 });
 

@@ -13,13 +13,19 @@ import {
   Output,
   Quality,
 } from 'mediabunny';
-import { convertWithinBudget, planConversion, sendFailure } from './plan.js';
+import {
+  convertWithinBudget,
+  planConversion,
+  sendFailure,
+  sizeRefusal,
+  UNSUPPORTED,
+} from './plan.js';
 
 /** @typedef {import('./plan.js').FileFacts} FileFacts */
 /** @typedef {import('./plan.js').Plan} Plan */
 /** @typedef {import('../tgcloud/lib/converted_media.js').ConvertedKind} ConvertedKind */
 
-const UNSUPPORTED = 'Этот файл не поддерживается на этом устройстве';
+const PICK_PROMPT = 'Выбери аудио или видео до 100 МБ';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -36,14 +42,14 @@ const glyph = $('glyph');
 const ring = $('ring');
 const caption = $('caption');
 const choice = $('choice');
-const note = $('note');
+const cropNote = $('note');
 const status = $('status');
 const action = /** @type {HTMLButtonElement} */ ($('action'));
 const repick = $('repick');
 
 /**
- * What the page is working on: the picked file and its facts, and once converted, the
- * output waiting to be handed back (kept so a failed hand-back can be retried).
+ * The picked file and its facts, and once converted, the output waiting to be handed
+ * back (kept so a failed hand-back can be retried).
  * @type {{ file: File, facts: FileFacts, url: string } | null}
  */
 let picked = null;
@@ -51,7 +57,7 @@ let picked = null;
 let converted = null;
 let busy = false;
 /** The flow's latest status line. */
-let message = { text: '', isError: false };
+let statusLine = { text: '', isError: false };
 
 if (!tg?.initDataUnsafe?.user) {
   // Opened outside the bot's inline button: the endpoint would refuse the hand-back.
@@ -73,25 +79,44 @@ action.addEventListener('click', () => void (converted ? handBack() : convert())
 
 /** @param {File} file */
 async function pick(file) {
-  reset();
-  if (picked) URL.revokeObjectURL(picked.url);
-  picked = null;
-  setBusy(true);
+  forget();
   caption.textContent = file.name;
+  // Refused before reading: parsing a huge file can freeze the phone.
+  const tooBig = sizeRefusal(file.size);
+  if (tooBig) {
+    showStatus(tooBig.refusal, true);
+    return;
+  }
+  setBusy(true);
   showStatus('Читаю файл…');
+  const url = URL.createObjectURL(file);
   try {
-    const url = URL.createObjectURL(file);
     const facts = await factsOf(file, url);
     picked = { file, facts, url };
     showPreview(facts, url);
     showStatus('');
   } catch (error) {
     console.error('Converter: cannot read the file', error);
-    showStatus(UNSUPPORTED, true);
+    URL.revokeObjectURL(url);
+    showStatus(UNSUPPORTED.refusal, true);
   } finally {
     setBusy(false);
   }
-  render();
+}
+
+/** @param {File} file */
+const openInput = (file) => new Input({ formats: ALL_FORMATS, source: new BlobSource(file) });
+
+/**
+ * The first audio track this device can decode: iPhone videos also carry a spatial
+ * audio track that can't be decoded, next to the AAC one.
+ * @param {Input} input
+ */
+async function firstDecodableAudio(input) {
+  for (const track of await input.getAudioTracks()) {
+    if (await track.canDecode()) return track;
+  }
+  return null;
 }
 
 /**
@@ -102,7 +127,7 @@ async function pick(file) {
  * @returns {Promise<FileFacts>}
  */
 async function factsOf(file, url) {
-  const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(file) });
+  const input = openInput(file);
   const videoTrack = await input.getPrimaryVideoTrack();
   const audioTracks = await input.getAudioTracks();
   const duration =
@@ -161,6 +186,7 @@ function showPreview(facts, url) {
     ? `${length}, ${facts.video.width}×${facts.video.height}`
     : length;
   if (facts.video?.decodable) {
+    // The disc crops it exactly as the video note will be.
     preview.src = url;
     preview.hidden = false;
     glyph.hidden = true;
@@ -175,17 +201,18 @@ function showPreview(facts, url) {
 function render() {
   const plan = currentPlan();
   choice.hidden = !picked?.facts.video;
-  note.hidden = !(plan && 'kind' in plan && plan.kind === 'videoNote' && plan.cropWarning);
+  cropNote.hidden = !(plan && 'kind' in plan && plan.kind === 'videoNote' && plan.cropWarning);
   repick.hidden = !picked || busy;
-  // A refused plan explains itself; otherwise the flow's latest message stays.
+  // A refused plan explains itself; otherwise the flow's latest status line stays.
   const shown =
-    plan && 'refusal' in plan && !busy ? { text: plan.refusal, isError: true } : message;
+    plan && 'refusal' in plan && !busy ? { text: plan.refusal, isError: true } : statusLine;
   status.textContent = shown.text;
   status.classList.toggle('is-error', shown.isError);
   action.hidden = !plan || 'refusal' in plan;
   action.disabled = busy;
-  if (!action.hidden && !busy)
+  if (!action.hidden && !busy) {
     action.textContent = converted ? 'Отправить ещё раз' : 'Конвертировать';
+  }
 }
 
 async function convert() {
@@ -207,7 +234,7 @@ async function convert() {
     converted = { kind: plan.kind, bytes: result.bytes };
   } catch (error) {
     console.error('Converter: conversion failed', error);
-    showStatus(UNSUPPORTED, true);
+    showStatus(UNSUPPORTED.refusal, true);
     return;
   } finally {
     setProgress(0);
@@ -216,24 +243,20 @@ async function convert() {
   await handBack();
 }
 
+/** A target bitrate in bits per second (a bare number would be a 0–1 quality level). */
+const bitrate = (/** @type {number} */ bps) => new Quality({ bitrate: bps });
+
 /**
- * Converts the file as planned. The video note is center-cropped to a square; only the
- * first audio track the device can decode is kept (iPhone videos also carry a spatial
- * audio track that can't be decoded).
+ * Converts the file as planned: a video note is center-cropped to a square; only the
+ * first decodable audio track is kept.
  * @param {File} file
  * @param {Plan} plan
  * @returns {Promise<Uint8Array>}
  */
 async function encode(file, plan) {
-  const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(file) });
+  const input = openInput(file);
   const videoTrack = await input.getPrimaryVideoTrack();
-  let audioTrack = null;
-  for (const track of await input.getAudioTracks()) {
-    if (await track.canDecode()) {
-      audioTrack = track;
-      break;
-    }
-  }
+  const audioTrack = await firstDecodableAudio(input);
   const target = new BufferTarget();
   const output = new Output({
     format:
@@ -252,15 +275,15 @@ async function encode(file, plan) {
             height: plan.side,
             fit: 'cover',
             codec: 'avc',
-            quality: new Quality(plan.videoBitrate),
+            quality: bitrate(plan.videoBitrate),
           }
         : { discard: true },
     audio: (track) =>
       track !== audioTrack
         ? { discard: true }
         : plan.kind === 'voice'
-          ? { codec: 'opus', quality: new Quality(plan.audioBitrate), numberOfChannels: 1 }
-          : { codec: 'aac', quality: new Quality(plan.audioBitrate) },
+          ? { codec: 'opus', quality: bitrate(plan.audioBitrate), numberOfChannels: 1 }
+          : { codec: 'aac', quality: bitrate(plan.audioBitrate) },
   });
   if (!conversion.isValid) {
     throw new Error(
@@ -290,13 +313,9 @@ async function handBack() {
   } catch (error) {
     console.error('Converter: hand-back failed', error);
     const failure = sendFailure(error);
-    showStatus(failure.text, true);
     // A refusal retrying can't fix (a stale button, not the admin, too large) ends here.
-    if (!failure.retry) {
-      converted = null;
-      picked = null;
-      reset();
-    }
+    if (!failure.retry) forget();
+    showStatus(failure.text, true);
   } finally {
     setBusy(false);
   }
@@ -327,12 +346,14 @@ function setProgress(progress) {
 
 /** @param {string} text @param {boolean} [isError] */
 function showStatus(text, isError = false) {
-  message = { text, isError };
+  statusLine = { text, isError };
   render();
 }
 
-/** Clears what the previous file left on screen. */
-function reset() {
+/** Drops the picked file and its output, and clears what they left on screen. */
+function forget() {
+  if (picked) URL.revokeObjectURL(picked.url);
+  picked = null;
   converted = null;
   preview.pause();
   preview.removeAttribute('src');
@@ -340,5 +361,6 @@ function reset() {
   glyph.hidden = false;
   glyph.textContent = '+';
   glyph.classList.remove('is-audio');
+  caption.textContent = PICK_PROMPT;
   setProgress(0);
 }

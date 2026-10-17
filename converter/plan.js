@@ -1,7 +1,7 @@
 // The Converter's decisions, kept apart from the DOM and mediabunny so they can be
 // tested: which files it refuses up front, and how it converts the rest (ADR-0004).
 
-import { MAX_UPLOAD_BYTES, REFUSAL } from '../tgcloud/lib/converted_media.js';
+import { MAX_UPLOAD_BYTES, REFUSALS, TOO_HEAVY } from '../tgcloud/lib/converted_media.js';
 
 /** @typedef {import('../tgcloud/lib/converted_media.js').ConvertedKind} ConvertedKind */
 
@@ -32,10 +32,18 @@ const NOTE_SIDE = 640;
 const NOTE_VIDEO_BITRATE = 650_000;
 const RETRY_VIDEO_BITRATE = 500_000;
 const NOTE_AUDIO_BITRATE = 48_000;
+const VOICE_BITRATE = 64_000;
 
 // There's no ffmpeg.wasm fallback (ADR-0004): what WebCodecs can't decode is refused.
-const UNSUPPORTED = { refusal: 'Этот файл не поддерживается на этом устройстве' };
-const TOO_HEAVY = 'Видео слишком «тяжёлое», попробуй короче';
+export const UNSUPPORTED = { refusal: 'Этот файл не поддерживается на этом устройстве' };
+
+/**
+ * Why a file this big is refused before it's even read, or null if its size is fine.
+ * @param {number} size in bytes
+ */
+export function sizeRefusal(size) {
+  return size > MAX_INPUT_BYTES ? { refusal: 'Файл больше 100 МБ — выбери файл поменьше' } : null;
+}
 
 /**
  * How to convert the file, or why it's refused.
@@ -44,9 +52,8 @@ const TOO_HEAVY = 'Видео слишком «тяжёлое», попробу�
  */
 export function planConversion(facts) {
   const { video } = facts;
-  if (facts.size > MAX_INPUT_BYTES) {
-    return { refusal: 'Файл больше 100 МБ — выбери файл поменьше' };
-  }
+  const tooBig = sizeRefusal(facts.size);
+  if (tooBig) return tooBig;
   // A clip that's "15 seconds" in the gallery passes even if it's really 15.9 s.
   const seconds = Math.floor(facts.duration);
   // Any one decodable audio track will do: iPhone videos carry an extra spatial-audio
@@ -58,7 +65,7 @@ export function planConversion(facts) {
     if (seconds > VOICE_MAX_SECONDS) {
       return { refusal: 'Голосовое может быть не длиннее 20 секунд — выбери клип покороче' };
     }
-    return { kind: 'voice', audioBitrate: 64_000 };
+    return { kind: 'voice', audioBitrate: VOICE_BITRATE };
   }
   // A silent video makes a silent video note, but sound we can't decode isn't dropped.
   if (!video.decodable || (facts.audioDecodable.length > 0 && !audioDecodable)) {
@@ -96,17 +103,6 @@ export async function convertWithinBudget(plan, encode) {
   return { refusal: TOO_HEAVY };
 }
 
-/** @type {Record<string, { text: string, retry: boolean }>} */
-const FAILURES = {
-  [REFUSAL.VOICE_FORBIDDEN]: {
-    text: 'Разреши боту голосовые сообщения: Настройки → Конфиденциальность → Голосовые сообщения, и попробуй ещё раз',
-    retry: true,
-  },
-  [REFUSAL.NO_PENDING_ADD]: { text: 'Эта кнопка устарела — начни /add заново', retry: false },
-  [REFUSAL.NOT_ADMIN]: { text: 'Добавлять мемы может только администратор', retry: false },
-  [REFUSAL.TOO_LARGE]: { text: TOO_HEAVY, retry: false },
-};
-
 /**
  * What to tell the admin when the hand-back (`Telegram.WebApp.Serverless.call`) fails,
  * and whether retrying with the same file may help. Anything but a known refusal (a
@@ -119,5 +115,7 @@ export function sendFailure(error) {
     error ?? {}
   );
   const code = type === 'ENDPOINT_ERROR' ? String(parameters?.code) : '';
-  return FAILURES[code] ?? { text: 'Не удалось отправить, попробуй ещё раз', retry: true };
+  return code in REFUSALS
+    ? REFUSALS[/** @type {keyof typeof REFUSALS} */ (code)]
+    : REFUSALS.SEND_FAILED;
 }

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import addConvertedMedia from '../tgcloud/endpoints/addConvertedMedia.js';
 import handleMessage from '../tgcloud/handlers/message.js';
-import { setMiniAppUrl } from './fakes/config.js';
+import { setConverterUrl } from './fakes/config.js';
 import { BotApiError, callsTo, stubApi } from './fakes/sdk.js';
 import { tables } from './fakes/store.js';
 import { ADMIN_ID, textMessage, USER_ID } from './payloads.js';
@@ -179,8 +179,8 @@ describe('the Converter hand-back is refused', () => {
 });
 
 describe("/add's media step offers the Converter", () => {
-  test('as an inline web_app button after the prompt, when the Mini App URL is set', async () => {
-    setMiniAppUrl(URL);
+  test('as an inline web_app button after the prompt, when the Converter URL is set', async () => {
+    setConverterUrl(URL);
     await handleMessage(admin('/add'));
 
     const [prompt, offer] = callsTo('sendMessage');
@@ -192,7 +192,7 @@ describe("/add's media step offers the Converter", () => {
     });
   });
 
-  test('not at all when the Mini App URL is empty', async () => {
+  test('not at all when the Converter URL is empty', async () => {
     await handleMessage(admin('/add'));
 
     expect(callsTo('sendMessage')).toHaveLength(1);

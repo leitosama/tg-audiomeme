@@ -84,8 +84,9 @@ called as plain functions; assert on the mock bot's calls. No real Telegram API 
   gitignored `tgcloud/lib/config.js` from `.env`. The Converter (`converter/`, Vite +
   mediabunny; decisions in the pure `converter/plan.js`) is the Mini App: `npm run build`
   writes it to `dist/`, which `tgcloud.jsonc` deploys; its endpoint is
-  `tgcloud/endpoints/addConvertedMedia.js`. Its CI (`.github/workflows/tgcloud.yml`) deploys pushes to the rewrite
-  branch to the `dev` GitHub Environment. Feature PRs target `claude/tgcloud-rewrite`.
+  `tgcloud/endpoints/addConvertedMedia.js`, and its URL is derived from `TGCLOUD_TOKEN`.
+  Its CI (`.github/workflows/tgcloud.yml`) deploys pushes to the rewrite branch to the
+  `dev` GitHub Environment. Feature PRs target `claude/tgcloud-rewrite`.
 
 ## Agent skills
 

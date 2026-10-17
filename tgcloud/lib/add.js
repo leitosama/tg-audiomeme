@@ -2,7 +2,7 @@
 // saved with the store between updates; handlers/message routes the admin's messages
 // here while a step is pending. Only voice messages and video notes are memes (ADR-0002).
 
-import { MINI_APP_URL } from './config.js';
+import { CONVERTER_URL } from './config.js';
 import {
   CANCEL_KEYBOARD,
   emojiOf,
@@ -40,9 +40,9 @@ const EMOJI_PROMPT = 'Теперь пришли эмодзи для мема (/s
 export async function startAdd(chatId) {
   await setStep(chatId, MEDIA_STEP, {});
   await say(chatId, MEDIA_PROMPT, CANCEL_KEYBOARD);
-  if (!MINI_APP_URL) return;
+  if (!CONVERTER_URL) return;
   await say(chatId, CONVERTER_OFFER, {
-    inline_keyboard: [[{ text: '📁 Загрузить файл', web_app: { url: MINI_APP_URL } }]],
+    inline_keyboard: [[{ text: '📁 Загрузить файл', web_app: { url: CONVERTER_URL } }]],
   });
 }
 

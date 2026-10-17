@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'vitest';
-import { convertWithinBudget, planConversion, sendFailure } from '../converter/plan.js';
+import {
+  convertWithinBudget,
+  planConversion,
+  sendFailure,
+  sizeRefusal,
+} from '../converter/plan.js';
 
 /** @typedef {import('../converter/plan.js').FileFacts} FileFacts */
 
@@ -82,6 +87,13 @@ describe('refuses up front, rounding durations down to whole seconds,', () => {
   test('a file over 100 MB, however short', () => {
     expect(planConversion(video({ size: 100_000_000 }))).not.toHaveProperty('refusal');
     expect(planConversion(video({ size: 100_000_001, duration: 1 }))).toEqual({
+      refusal: 'Файл больше 100 МБ — выбери файл поменьше',
+    });
+  });
+
+  test('a file over 100 MB before it is even read', () => {
+    expect(sizeRefusal(100_000_000)).toBeNull();
+    expect(sizeRefusal(120_000_000)).toEqual({
       refusal: 'Файл больше 100 МБ — выбери файл поменьше',
     });
   });

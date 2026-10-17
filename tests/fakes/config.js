@@ -1,10 +1,10 @@
 // Fixed test config standing in for the generated tgcloud/lib/config.js. Approval
-// mode and the Mini App URL are live bindings so a test can switch them on;
+// mode and the Converter URL are live bindings so a test can switch them on;
 // tests/setup.js resets them.
 
 export const ADMIN_ID = 1000;
 export let REQUIRE_APPROVAL = false;
-export let MINI_APP_URL = '';
+export let CONVERTER_URL = '';
 
 /** @param {boolean} on */
 export function setRequireApproval(on) {
@@ -12,6 +12,6 @@ export function setRequireApproval(on) {
 }
 
 /** @param {string} url */
-export function setMiniAppUrl(url) {
-  MINI_APP_URL = url;
+export function setConverterUrl(url) {
+  CONVERTER_URL = url;
 }

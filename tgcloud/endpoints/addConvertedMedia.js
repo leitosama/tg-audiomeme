@@ -6,9 +6,33 @@
 import { api, BotApiError, EndpointError, InputFile } from 'sdk';
 import { acceptMedia, isAwaitingMedia } from '../lib/add.js';
 import { ADMIN_ID } from '../lib/config.js';
-import { MAX_UPLOAD_BYTES, REFUSAL } from '../lib/converted_media.js';
+import { MAX_UPLOAD_BYTES, REFUSALS } from '../lib/converted_media.js';
 
 /** @typedef {import('../lib/converted_media.js').ConvertedKind} ConvertedKind */
+/** @typedef {import('../lib/converted_media.js').RefusalCode} RefusalCode */
+/** @typedef {import('../lib/store.js').Meme['mediaType']} MediaType */
+
+/**
+ * How each kind is sent, and the meme it makes; `send` returns the sent file's `file_id`.
+ * @type {Record<ConvertedKind, { mediaType: MediaType, send: (chatId: number, bytes: Uint8Array) => Promise<string> }>}
+ */
+const KINDS = {
+  voice: {
+    mediaType: 'audio',
+    send: async (chatId, bytes) => {
+      const voice = new InputFile(bytes, 'meme.ogg', { type: 'audio/ogg' });
+      return (await api.sendVoice({ chat_id: chatId, voice })).voice.file_id;
+    },
+  },
+  videoNote: {
+    mediaType: 'video',
+    send: async (chatId, bytes) => {
+      const videoNote = new InputFile(bytes, 'meme.mp4', { type: 'video/mp4' });
+      return (await api.sendVideoNote({ chat_id: chatId, video_note: videoNote })).video_note
+        .file_id;
+    },
+  },
+};
 
 /**
  * @param {{ kind?: unknown, data?: unknown }} input
@@ -16,45 +40,33 @@ import { MAX_UPLOAD_BYTES, REFUSAL } from '../lib/converted_media.js';
  * @returns {Promise<{ ok: true }>}
  */
 export default async function addConvertedMedia(input, ctx) {
-  if (ctx.initData.user?.id !== ADMIN_ID) {
-    throw refusal('Добавлять мемы может только администратор', REFUSAL.NOT_ADMIN);
-  }
+  if (ctx.initData.user?.id !== ADMIN_ID) throw refusal('NOT_ADMIN');
   const chatId = ADMIN_ID; // the admin's private chat with the bot has their user ID
-  if (!(await isAwaitingMedia(chatId))) {
-    throw refusal('Эта кнопка устарела — начни /add заново', REFUSAL.NO_PENDING_ADD);
-  }
+  if (!(await isAwaitingMedia(chatId))) throw refusal('NO_PENDING_ADD');
   const { kind, data } = input;
   if ((kind !== 'voice' && kind !== 'videoNote') || typeof data !== 'string') {
-    throw refusal('Неверный запрос', REFUSAL.BAD_INPUT);
+    throw refusal('BAD_INPUT');
   }
   const bytes = decodeBase64(data);
-  if (!bytes?.length) throw refusal('Неверный запрос', REFUSAL.BAD_INPUT);
-  if (bytes.length > MAX_UPLOAD_BYTES) {
-    throw refusal('Видео слишком «тяжёлое», попробуй короче', REFUSAL.TOO_LARGE);
-  }
+  if (!bytes?.length) throw refusal('BAD_INPUT');
+  if (bytes.length > MAX_UPLOAD_BYTES) throw refusal('TOO_LARGE');
+  const { mediaType, send } = KINDS[kind];
   let fileId;
   try {
-    fileId = await send(chatId, kind, bytes);
+    fileId = await send(chatId, bytes);
   } catch (error) {
     if (!(error instanceof BotApiError)) throw error;
     console.error('endpoints/addConvertedMedia: upload failed', error);
-    if (/VOICE_MESSAGES_FORBIDDEN/.test(error.description)) {
-      throw refusal(
-        'Разреши боту голосовые сообщения: Настройки → Конфиденциальность → Голосовые сообщения',
-        REFUSAL.VOICE_FORBIDDEN,
-      );
-    }
-    throw refusal('Не удалось отправить, попробуй ещё раз', REFUSAL.SEND_FAILED);
+    throw refusal(
+      /VOICE_MESSAGES_FORBIDDEN/.test(error.description) ? 'VOICE_FORBIDDEN' : 'SEND_FAILED',
+    );
   }
-  await acceptMedia(chatId, { fileId, mediaType: kind === 'voice' ? 'audio' : 'video' });
+  await acceptMedia(chatId, { fileId, mediaType });
   return { ok: true };
 }
 
-/**
- * @param {string} description shown by the Converter when it has no text of its own
- * @param {string} code one of REFUSAL
- */
-const refusal = (description, code) => new EndpointError(description, { code });
+/** @param {RefusalCode} code */
+const refusal = (code) => new EndpointError(REFUSALS[code].text, { code });
 
 /**
  * The bytes the base64 text encodes (the runtime has no `atob`), or null if it isn't
@@ -67,25 +79,4 @@ function decodeBase64(data) {
   } catch {
     return null;
   }
-}
-
-/**
- * Sends the file as a voice message or video note; returns the sent file's `file_id`.
- * @param {number} chatId
- * @param {ConvertedKind} kind
- * @param {Uint8Array} bytes
- */
-async function send(chatId, kind, bytes) {
-  if (kind === 'voice') {
-    const message = await api.sendVoice({
-      chat_id: chatId,
-      voice: new InputFile(bytes, 'meme.ogg', { type: 'audio/ogg' }),
-    });
-    return message.voice.file_id;
-  }
-  const message = await api.sendVideoNote({
-    chat_id: chatId,
-    video_note: new InputFile(bytes, 'meme.mp4', { type: 'video/mp4' }),
-  });
-  return message.video_note.file_id;
 }
