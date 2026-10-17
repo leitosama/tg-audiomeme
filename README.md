@@ -23,6 +23,12 @@ A single admin (`ADMIN_ID`) manages memes via direct messages to the bot:
 - **`/users`** — list users with their usage count and approve/revoke them via
   inline buttons (relevant when `REQUIRE_APPROVAL` is on).
 
+> **Admin's privacy settings.** To store a converted audio or video file, the bot
+> sends it to the admin's chat as a voice message or video note. If the admin's
+> account restricts voice messages (Settings → Privacy and Security → Voice
+> Messages, a Telegram Premium option), add the bot under **Always Allow**.
+> Otherwise adding a file fails with `VOICE_MESSAGES_FORBIDDEN`.
+
 ### For everyone
 
 - **Inline mode** — type `@botname` in any chat, pick a meme, and the bot sends the
