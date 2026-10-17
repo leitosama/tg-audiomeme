@@ -1,11 +1,11 @@
 // handlers/message — runs on each `message` update: bot commands (/start, /add,
-// /list and its /delete alias, /users) and the admin's
-// pending conversation step (/add). The platform calls the default export with the Message.
+// /list and its /delete alias, /users) and the admin's pending conversation step (/add,
+// or a hub rename/emoji edit). The platform calls the default export with the Message.
 
 import { api } from 'sdk';
 import { CANCEL_TEXT, cancelStep, continueAdd, startAdd, stepTakesCommand } from '../lib/add.js';
 import { commandOf, isAdminPrivate } from '../lib/commands.js';
-import { startList } from '../lib/list.js';
+import { continueEdit, editStepTakesCommand, startList } from '../lib/list.js';
 import { startReply } from '../lib/start.js';
 import { clearStep, getStep } from '../lib/store.js';
 import { startUsers } from '../lib/users.js';
@@ -24,8 +24,12 @@ export default async function (message) {
       await cancelStep(chatId);
       return;
     }
-    if (command === null || stepTakesCommand(step, command)) {
-      if (await continueAdd(message, step)) return;
+    if (
+      command === null ||
+      stepTakesCommand(step, command) ||
+      editStepTakesCommand(step, command)
+    ) {
+      if ((await continueAdd(message, step)) || (await continueEdit(message, step))) return;
     }
     // Any other command (or a step this code no longer knows) abandons the step.
     await clearStep(chatId);
