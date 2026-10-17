@@ -10,7 +10,10 @@
     "moduleResolution": "bundler",
     "lib": ["es2023"],
     "types": ["node"],
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    // scripts/tgcloud/ holds modules the operator copies into tgcloud/ for one run (the
+    // legacy import); their relative imports resolve as if they already sat there.
+    "rootDirs": ["tgcloud", "scripts/tgcloud"]
   },
   "include": ["tgcloud", "tests", "scripts", "types", "vitest.config.js"]
 }

@@ -54,6 +54,7 @@ declare module 'sdk/db' {
     raw: (s: string) => Builder;
   };
   export const eq: (a: Builder, b: unknown) => Builder;
+  export const gt: (a: Builder, b: unknown) => Builder;
   export const and: (...conds: Builder[]) => Builder;
   export const desc: (col: Builder) => Builder;
   export const asc: (col: Builder) => Builder;

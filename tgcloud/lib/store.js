@@ -3,7 +3,7 @@
 // which must keep the same exports — add each new query to both.
 
 import { db } from 'sdk';
-import { asc, desc, eq, sql } from 'sdk/db';
+import { asc, desc, eq, gt, sql } from 'sdk/db';
 import { conversationSteps, memes, sentMessages, users } from '../schema.js';
 
 /**
@@ -115,6 +115,39 @@ export async function searchMemes(query) {
   );
 }
 
+// --- Leaderboards (issue #17) ---
+
+/** Rows a leaderboard shows. */
+const TOP_LIMIT = 3;
+
+/**
+ * The most-sent memes (never-sent ones left out), ties by meme name.
+ * @returns {Promise<Meme[]>}
+ */
+export async function topMemes() {
+  return await db
+    .select()
+    .from(memes)
+    .where(gt(memes.count, 0))
+    .orderBy(desc(memes.count), asc(memes.name))
+    .limit(TOP_LIMIT)
+    .all();
+}
+
+/**
+ * The users with the most sends (those with none left out), ties by user ID.
+ * @returns {Promise<User[]>}
+ */
+export async function topUsers() {
+  return await db
+    .select()
+    .from(users)
+    .where(gt(users.count, 0))
+    .orderBy(desc(users.count), asc(users.userId))
+    .limit(TOP_LIMIT)
+    .all();
+}
+
 // --- Meme hub (/list, issue #18) ---
 
 /**
@@ -201,4 +234,41 @@ export async function recordSentMessage(id, seenAt) {
  */
 export async function pruneSentMessages(before) {
   await db.delete(sentMessages).where(sql`${sentMessages.seenAt} < ${before}`).run();
+}
+
+// --- Legacy import (issue #21) ---
+
+/**
+ * A meme as the Python bot stored it, with its creation date (SQLite `CURRENT_TIMESTAMP`
+ * text, or null).
+ * @typedef {Meme & { createdAt: string | null }} LegacyMeme
+ */
+
+/** Rows per INSERT, keeping each statement well under SQLite's bound-parameter limit. */
+const IMPORT_CHUNK = 100;
+
+/**
+ * How many rows the memes and users tables hold.
+ * @returns {Promise<{ memes: number, users: number }>}
+ */
+export async function countMemesAndUsers() {
+  return { memes: await db.$count(memes), users: await db.$count(users) };
+}
+
+/**
+ * Inserts memes and users exactly as given, ids included.
+ * @param {{ memes: LegacyMeme[], users: User[] }} rows
+ */
+export async function insertLegacyRows(rows) {
+  for (const [target, list] of [
+    [memes, rows.memes],
+    [users, rows.users],
+  ]) {
+    for (let i = 0; i < list.length; i += IMPORT_CHUNK) {
+      await db
+        .insert(target)
+        .values(list.slice(i, i + IMPORT_CHUNK))
+        .run();
+    }
+  }
 }
