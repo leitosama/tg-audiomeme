@@ -83,3 +83,50 @@ export async function searchMemes(query) {
     .sort((a, b) => b.count - a.count || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     .map((m) => ({ ...m }));
 }
+
+// --- Send counting (issue #16) ---
+
+/**
+ * Sent-message IDs already counted, with when they were seen (epoch ms). Kept apart
+ * from `tables` so other features' resets don't need to know about it.
+ * @type {Map<string, number>}
+ */
+export const sentMessages = new Map();
+
+/** @param {number} memeId */
+export async function incrementMemeCount(memeId) {
+  const meme = tables.memes.find((m) => m.id === memeId);
+  if (meme) meme.count += 1;
+}
+
+/**
+ * @param {number} userId
+ * @param {string} displayName
+ */
+export async function recordUserSend(userId, displayName) {
+  const user = tables.users.find((u) => u.userId === userId);
+  if (user) {
+    user.displayName = displayName;
+    user.count += 1;
+  } else {
+    tables.users.push({ userId, displayName, approved: false, count: 1 });
+  }
+}
+
+/**
+ * @param {string} id
+ * @param {number} seenAt
+ * @returns {Promise<boolean>}
+ */
+export async function recordSentMessage(id, seenAt) {
+  if (sentMessages.has(id)) return false;
+  sentMessages.set(id, seenAt);
+  return true;
+}
+
+/** @param {number} before */
+export async function pruneSentMessages(before) {
+  for (const [id, seenAt] of sentMessages) {
+    if (seenAt < before) sentMessages.delete(id);
+  }
+}

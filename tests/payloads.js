@@ -49,3 +49,29 @@ export function inlineQuery(query, { from = USER_ID, offset = '' } = {}) {
   const user = { id: from, is_bot: false, first_name: `User ${from}` };
   return { id: `iq-${from}`, from: user, query, offset, chat_type: 'sender' };
 }
+
+// --- Chosen inline results (issue #16) ---
+
+/** @typedef {import('@grammyjs/types').ChosenInlineResult} ChosenInlineResult */
+/** @typedef {import('@grammyjs/types').Update} Update */
+
+/**
+ * A result the user picked from the inline answers, with the context
+ * `handlers/chosen_inline_result` receives alongside it (`ctx.update`).
+ * @param {string} resultId
+ * @param {{ from?: number, firstName?: string, inlineMessageId?: string, updateId?: number }} [opts]
+ * @returns {[ChosenInlineResult, { update: Update }]}
+ */
+export function chosenResult(
+  resultId,
+  { from = USER_ID, firstName = `User ${from}`, inlineMessageId, updateId = 1 } = {},
+) {
+  /** @type {ChosenInlineResult} */
+  const chosen = {
+    result_id: resultId,
+    from: { id: from, is_bot: false, first_name: firstName },
+    query: '',
+    ...(inlineMessageId === undefined ? {} : { inline_message_id: inlineMessageId }),
+  };
+  return [chosen, { update: { update_id: updateId, chosen_inline_result: chosen } }];
+}

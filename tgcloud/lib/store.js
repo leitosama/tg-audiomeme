@@ -4,7 +4,7 @@
 
 import { db } from 'sdk';
 import { asc, desc, eq, sql } from 'sdk/db';
-import { conversationSteps, memes } from '../schema.js';
+import { conversationSteps, memes, sentMessages, users } from '../schema.js';
 
 /**
  * @typedef {object} Meme
@@ -113,4 +113,54 @@ export async function searchMemes(query) {
   return rows.filter(
     (m) => m.name.toLowerCase().includes(needle) || m.emoji.toLowerCase().includes(needle),
   );
+}
+
+// --- Send counting (issue #16) ---
+
+/** @param {number} memeId */
+export async function incrementMemeCount(memeId) {
+  await db
+    .update(memes)
+    .set({ count: sql`${memes.count} + 1` })
+    .where(eq(memes.id, memeId))
+    .run();
+}
+
+/**
+ * Counts one send for the user, registering them if new and refreshing their display name.
+ * @param {number} userId
+ * @param {string} displayName
+ */
+export async function recordUserSend(userId, displayName) {
+  await db
+    .insert(users)
+    .values({ userId, displayName, count: 1 })
+    .onConflictDoUpdate({
+      target: users.userId,
+      set: { displayName, count: sql`${users.count} + 1` },
+    })
+    .run();
+}
+
+/**
+ * Records a sent message's ID; false when it was already recorded.
+ * @param {string} id
+ * @param {number} seenAt epoch milliseconds
+ * @returns {Promise<boolean>}
+ */
+export async function recordSentMessage(id, seenAt) {
+  const rows = await db
+    .insert(sentMessages)
+    .values({ id, seenAt })
+    .onConflictDoNothing({ target: sentMessages.id })
+    .returning({ id: sentMessages.id });
+  return rows.length > 0;
+}
+
+/**
+ * Drops sent-message IDs recorded before `before` (epoch milliseconds).
+ * @param {number} before
+ */
+export async function pruneSentMessages(before) {
+  await db.delete(sentMessages).where(sql`${sentMessages.seenAt} < ${before}`).run();
 }
