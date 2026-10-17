@@ -26,6 +26,11 @@ The admin's `/list` menu: the library as inline buttons, opening a meme's detail
 view to preview, rename, re-emoji or delete it, edited in place.
 _Avoid_: list, menu, dashboard
 
+**Converter**:
+The admin's Mini App that turns an arbitrary audio or video file into a meme's voice
+message or video note while adding a meme.
+_Avoid_: Mini App, web app, uploader
+
 **Admin**:
 The single Telegram user who curates a bot instance's library and approves users.
 _Avoid_: owner, moderator
