@@ -163,6 +163,29 @@ export async function deleteMeme(id) {
   await db.delete(memes).where(eq(memes.id, id)).run();
 }
 
+// --- Hub rename and emoji (issue #19) ---
+
+/**
+ * Renames a meme; false (nothing changed) when another meme has that name or the
+ * meme is gone. OR IGNORE turns the unique-name clash into "no row updated".
+ * @param {number} id
+ * @param {string} name
+ * @returns {Promise<boolean>}
+ */
+export async function renameMeme(id, name) {
+  const result = await db.run(sql`UPDATE OR IGNORE memes SET name = ${name} WHERE id = ${id}`);
+  return result.rowsAffected > 0;
+}
+
+/**
+ * Sets the meme's emoji; '' removes it.
+ * @param {number} id
+ * @param {string} emoji
+ */
+export async function setMemeEmoji(id, emoji) {
+  await db.update(memes).set({ emoji }).where(eq(memes.id, id)).run();
+}
+
 // --- Send counting (issue #16) ---
 
 /** @param {number} memeId */

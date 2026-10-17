@@ -20,19 +20,19 @@ const NAME_STEP = 'add:name';
 const EMOJI_STEP = 'add:emoji';
 
 /** @type {ReplyKeyboardMarkup} */
-const CANCEL_KEYBOARD = {
+export const CANCEL_KEYBOARD = {
   keyboard: [[CANCEL_TEXT]],
   resize_keyboard: true,
   one_time_keyboard: true,
 };
 /** @type {ReplyKeyboardMarkup} */
-const SKIP_CANCEL_KEYBOARD = {
+export const SKIP_CANCEL_KEYBOARD = {
   keyboard: [['/skip', CANCEL_TEXT]],
   resize_keyboard: true,
   one_time_keyboard: true,
 };
 /** @type {ReplyKeyboardRemove} */
-const REMOVE_KEYBOARD = { remove_keyboard: true };
+export const REMOVE_KEYBOARD = { remove_keyboard: true };
 
 const MEDIA_PROMPT =
   'Перешли или запиши голосовое сообщение или видеосообщение-кружок (/cancel — отмена):';
@@ -46,12 +46,53 @@ const EMOJI_PROMPT = 'Теперь пришли эмодзи для мема (/s
  * @param {string} text
  * @param {ReplyKeyboardMarkup | ReplyKeyboardRemove} replyMarkup
  */
-async function say(chatId, text, replyMarkup) {
+export async function say(chatId, text, replyMarkup) {
   await api.sendMessage({ chat_id: chatId, text, reply_markup: replyMarkup });
 }
 
 /** Length in code points, as the Python bot counted it. @param {string} s */
 const lengthOf = (s) => [...s].length;
+
+/**
+ * The meme name a message gives (trimmed), or why it's refused: not text, empty or
+ * too long. Uniqueness is the caller's check. Shared with the hub's rename.
+ * @param {Message} message
+ * @returns {string | { refusal: string }}
+ */
+export function nameOf(message) {
+  if (message.text === undefined) return { refusal: '❌ Пришли название текстом:' };
+  const name = message.text.trim();
+  if (!name || lengthOf(name) > MAX_NAME_LENGTH) {
+    return {
+      refusal: `❌ Название должно быть от 1 до ${MAX_NAME_LENGTH} символов. Попробуй снова:`,
+    };
+  }
+  return name;
+}
+
+/** @param {string} name */
+export const takenNameRefusal = (name) =>
+  `❌ Мем с названием '${name}' уже существует. Введи другое название:`;
+
+/**
+ * The emoji a message gives ('' for `/skip`), or why it's refused. Shared with the
+ * hub's emoji edit.
+ * @param {Message} message
+ * @returns {string | { refusal: string }}
+ */
+export function emojiOf(message) {
+  if (message.text === undefined) {
+    return { refusal: '❌ Пришли эмодзи текстом (/skip — без эмодзи):' };
+  }
+  const text = message.text.trim();
+  const emoji = /^\/skip(?:@\w+)?$/i.test(text) ? '' : text;
+  if (lengthOf(emoji) > MAX_EMOJI_LENGTH) {
+    return {
+      refusal: `❌ Эмодзи должно быть не длиннее ${MAX_EMOJI_LENGTH} символов. Попробуй снова:`,
+    };
+  }
+  return emoji;
+}
 
 /** Starts `/add` in the admin's chat: asks for the media. @param {number} chatId */
 export async function startAdd(chatId) {
@@ -126,25 +167,13 @@ async function receiveMedia(message) {
  */
 async function receiveName(message, data) {
   const chatId = message.chat.id;
-  if (message.text === undefined) {
-    await say(chatId, '❌ Пришли название текстом:', CANCEL_KEYBOARD);
-    return;
-  }
-  const name = message.text.trim();
-  if (!name || lengthOf(name) > MAX_NAME_LENGTH) {
-    await say(
-      chatId,
-      `❌ Название должно быть от 1 до ${MAX_NAME_LENGTH} символов. Попробуй снова:`,
-      CANCEL_KEYBOARD,
-    );
+  const name = nameOf(message);
+  if (typeof name !== 'string') {
+    await say(chatId, name.refusal, CANCEL_KEYBOARD);
     return;
   }
   if (await memeNameExists(name)) {
-    await say(
-      chatId,
-      `❌ Мем с названием '${name}' уже существует. Введи другое название:`,
-      CANCEL_KEYBOARD,
-    );
+    await say(chatId, takenNameRefusal(name), CANCEL_KEYBOARD);
     return;
   }
   await setStep(chatId, EMOJI_STEP, { ...data, name });
@@ -157,18 +186,9 @@ async function receiveName(message, data) {
  */
 async function receiveEmoji(message, data) {
   const chatId = message.chat.id;
-  if (message.text === undefined) {
-    await say(chatId, '❌ Пришли эмодзи текстом (/skip — без эмодзи):', SKIP_CANCEL_KEYBOARD);
-    return;
-  }
-  const text = message.text.trim();
-  const emoji = /^\/skip(?:@\w+)?$/i.test(text) ? '' : text;
-  if (lengthOf(emoji) > MAX_EMOJI_LENGTH) {
-    await say(
-      chatId,
-      `❌ Эмодзи должно быть не длиннее ${MAX_EMOJI_LENGTH} символов. Попробуй снова:`,
-      SKIP_CANCEL_KEYBOARD,
-    );
+  const emoji = emojiOf(message);
+  if (typeof emoji !== 'string') {
+    await say(chatId, emoji.refusal, SKIP_CANCEL_KEYBOARD);
     return;
   }
   await clearStep(chatId);
