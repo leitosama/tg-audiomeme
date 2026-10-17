@@ -2,6 +2,7 @@
 // saved with the store between updates; handlers/message routes the admin's messages
 // here while a step is pending. Only voice messages and video notes are memes (ADR-0002).
 
+import { MINI_APP_URL } from './config.js';
 import {
   CANCEL_KEYBOARD,
   emojiOf,
@@ -12,7 +13,7 @@ import {
   takenNameRefusal,
 } from './meme_input.js';
 import { labelOf } from './meme_title.js';
-import { addMeme, clearStep, memeNameExists, setStep } from './store.js';
+import { addMeme, clearStep, getStep, memeNameExists, setStep } from './store.js';
 
 /** @typedef {import('@grammyjs/types').Message} Message */
 /** @typedef {import('./store.js').ConversationStep} ConversationStep */
@@ -26,13 +27,23 @@ const MEDIA_PROMPT =
   'Перешли или запиши голосовое сообщение или видеосообщение-кружок (/cancel — отмена):';
 const MEDIA_REFUSAL =
   '❌ Это не голосовое сообщение и не кружок. Перешли или запиши голосовое сообщение или видеосообщение-кружок:';
+const CONVERTER_OFFER = '…или загрузи аудио/видео файл:';
 const NAME_PROMPT = 'Теперь введи название мема (любой текст):';
 const EMOJI_PROMPT = 'Теперь пришли эмодзи для мема (/skip — без эмодзи):';
 
-/** Starts `/add` in the admin's chat: asks for the media. @param {number} chatId */
+/**
+ * Starts `/add` in the admin's chat: asks for the media and, when this bot instance hosts
+ * the Converter, offers it. The button must be inline: a Mini App opened from a reply
+ * keyboard gets no user in its init data, so its endpoint call would be refused.
+ * @param {number} chatId
+ */
 export async function startAdd(chatId) {
   await setStep(chatId, MEDIA_STEP, {});
   await say(chatId, MEDIA_PROMPT, CANCEL_KEYBOARD);
+  if (!MINI_APP_URL) return;
+  await say(chatId, CONVERTER_OFFER, {
+    inline_keyboard: [[{ text: '📁 Загрузить файл', web_app: { url: MINI_APP_URL } }]],
+  });
 }
 
 /**
@@ -73,6 +84,21 @@ async function receiveMedia(message) {
     await say(chatId, MEDIA_REFUSAL, CANCEL_KEYBOARD);
     return;
   }
+  await acceptMedia(chatId, media);
+}
+
+/** Whether `/add` is waiting for its media in this chat. @param {number} chatId */
+export async function isAwaitingMedia(chatId) {
+  return (await getStep(chatId))?.name === MEDIA_STEP;
+}
+
+/**
+ * Moves `/add` from the media step to the name step with the meme's media: from a
+ * forwarded voice message or video note, or from one the Converter uploaded.
+ * @param {number} chatId
+ * @param {MediaData} media
+ */
+export async function acceptMedia(chatId, media) {
   await setStep(chatId, NAME_STEP, media);
   await say(chatId, NAME_PROMPT, CANCEL_KEYBOARD);
 }

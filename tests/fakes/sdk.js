@@ -45,8 +45,29 @@ export class BotApiError extends Error {
   }
 }
 
-export class EndpointError extends Error {}
-export class InputFile {}
+export class EndpointError extends Error {
+  /**
+   * @param {string} description
+   * @param {Record<string, unknown>} [parameters]
+   */
+  constructor(description, parameters) {
+    super(description);
+    this.parameters = parameters;
+  }
+}
+
+export class InputFile {
+  /**
+   * @param {Uint8Array | ArrayBuffer} bytes
+   * @param {string} filename
+   * @param {{ type?: string }} [options]
+   */
+  constructor(bytes, filename, options = {}) {
+    this.bytes = bytes;
+    this.filename = filename;
+    this.type = options.type;
+  }
+}
 
 export const api = new Proxy(
   {},

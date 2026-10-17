@@ -7,6 +7,7 @@ import { clearStep } from './store.js';
 /** @typedef {import('@grammyjs/types').Message} Message */
 /** @typedef {import('@grammyjs/types').ReplyKeyboardMarkup} ReplyKeyboardMarkup */
 /** @typedef {import('@grammyjs/types').ReplyKeyboardRemove} ReplyKeyboardRemove */
+/** @typedef {import('@grammyjs/types').InlineKeyboardMarkup} InlineKeyboardMarkup */
 /** @typedef {import('./store.js').ConversationStep} ConversationStep */
 
 export const CANCEL_TEXT = '❌ Отмена';
@@ -31,7 +32,7 @@ export const REMOVE_KEYBOARD = { remove_keyboard: true };
 /**
  * @param {number} chatId
  * @param {string} text
- * @param {ReplyKeyboardMarkup | ReplyKeyboardRemove} replyMarkup
+ * @param {ReplyKeyboardMarkup | ReplyKeyboardRemove | InlineKeyboardMarkup} replyMarkup
  */
 export async function say(chatId, text, replyMarkup) {
   await api.sendMessage({ chat_id: chatId, text, reply_markup: replyMarkup });
