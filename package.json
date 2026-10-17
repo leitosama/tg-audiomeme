@@ -9,6 +9,7 @@
     "@tgcloud/cli": "0.2.0",
     "@types/node": "26.6.5",
     "@vitest/coverage-v8": "5.0.4",
+    "mediabunny": "^1.61.6",
     "typescript": "7.0.2",
     "vite": "^8.3.4",
     "vitest": "5.0.4"

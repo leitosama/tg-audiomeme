@@ -2,6 +2,18 @@
 // PROTOTYPE, wipe me: measures what the Converter depends on, inside Telegram.
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile, toBlobURL } from '@ffmpeg/util';
+import {
+  ALL_FORMATS,
+  BlobSource,
+  BufferTarget,
+  Conversion,
+  canEncodeAudio,
+  canEncodeVideo,
+  Input,
+  Mp4OutputFormat,
+  OggOutputFormat,
+  Output,
+} from 'mediabunny';
 
 const CORE = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm';
 const tg = window.Telegram?.WebApp;
@@ -106,56 +118,92 @@ function probe(file) {
   });
 }
 
+// Q2: output capped so a 20 s video note stays under ~1 MB (one endpoint call).
+const VIDEO_BPS = 280_000;
+const AUDIO_NOTE_BPS = 48_000;
+const VOICE_BPS = 64_000;
+
+async function convertFFmpeg(file, kind, preset, entry) {
+  await loadFFmpeg(entry);
+  const inName = `in${file.name.slice(file.name.lastIndexOf('.'))}`;
+  await ffmpeg.writeFile(inName, await fetchFile(file));
+  const outName = kind === 'voice' ? 'out.ogg' : 'out.mp4';
+  const side = "'trunc(min(iw,ih)/2)*2'";
+  const args =
+    kind === 'voice'
+      ? ['-i', inName, '-vn', '-c:a', 'libopus', '-ac', '1', '-b:a', '64k', outName]
+      : ['-i', inName, '-vf', `crop=${side}:${side},scale='min(640,iw)':-2`,
+         '-c:v', 'libx264', '-preset', preset,
+         '-b:v', '280k', '-maxrate', '300k', '-bufsize', '600k',
+         '-c:a', 'aac', '-b:a', '48k', '-movflags', '+faststart', outName];
+  const t1 = performance.now();
+  entry.exitCode = await ffmpeg.exec(args);
+  entry.execMs = Math.round(performance.now() - t1);
+  const bytes = await ffmpeg.readFile(outName);
+  await ffmpeg.deleteFile(inName);
+  return bytes;
+}
+
+async function convertWebCodecs(file, kind, entry) {
+  const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(file) });
+  const vt = await input.getPrimaryVideoTrack();
+  const at = await input.getPrimaryAudioTrack();
+  entry.tracks = {
+    video: vt ? { codec: vt.codec, canDecode: await vt.canDecode() } : null,
+    audio: at ? { codec: at.codec, canDecode: await at.canDecode() } : null,
+  };
+  const output = new Output({
+    format: kind === 'voice' ? new OggOutputFormat() : new Mp4OutputFormat({ fastStart: 'in-memory' }),
+    target: new BufferTarget(),
+  });
+  const side = Math.min(640, Math.floor(Math.min(entry.meta.width || 640, entry.meta.height || 640) / 2) * 2);
+  const conversion = await Conversion.init({
+    input,
+    output,
+    video:
+      kind === 'voice'
+        ? { discard: true }
+        : { width: side, height: side, fit: 'cover', codec: 'avc', bitrate: VIDEO_BPS },
+    audio:
+      kind === 'voice'
+        ? { codec: 'opus', bitrate: VOICE_BPS, numberOfChannels: 1 }
+        : { codec: 'aac', bitrate: AUDIO_NOTE_BPS },
+  });
+  entry.discarded = conversion.discardedTracks.map((d) => ({ type: d.track.type, reason: d.reason }));
+  entry.isValid = conversion.isValid;
+  if (!conversion.isValid) throw new Error('conversion invalid, see discarded');
+  conversion.onProgress = (p) => {
+    $('progress').textContent = `${Math.round(p * 100)}%`;
+  };
+  const t1 = performance.now();
+  await conversion.execute();
+  entry.execMs = Math.round(performance.now() - t1);
+  return new Uint8Array(output.target.buffer);
+}
+
 $('convert').onclick = async () => {
   const file = $('file').files[0];
   if (!file) return;
   const kind = $('kind').value;
+  const engine = $('engine').value;
   const preset = $('preset').value;
-  const entry = {
-    name: file.name,
-    type: file.type,
-    inMB: +(file.size / 1048576).toFixed(2),
-    kind,
-    preset,
-  };
+  const entry = { name: file.name, type: file.type, inMB: +(file.size / 1048576).toFixed(2), kind, engine };
+  if (engine === 'ffmpeg' && kind === 'videonote') entry.preset = preset;
   results.conversions.push(entry);
   $('convert').disabled = true;
+  $('send').disabled = true;
   try {
     const t0 = performance.now();
     entry.meta = await probe(file);
     entry.probeMs = Math.round(performance.now() - t0);
     show();
-    await loadFFmpeg(entry);
-    const inName = `in${file.name.slice(file.name.lastIndexOf('.'))}`;
-    await ffmpeg.writeFile(inName, await fetchFile(file));
-    const outName = kind === 'voice' ? 'out.ogg' : 'out.mp4';
-    const side = "'trunc(min(iw,ih)/2)*2'";
-    const args =
-      kind === 'voice'
-        ? ['-i', inName, '-vn', '-c:a', 'libopus', '-ac', '1', '-b:a', '64k', outName]
-        : [
-            '-i',
-            inName,
-            '-vf',
-            `crop=${side}:${side},scale='min(640,iw)':-2`,
-            '-c:v',
-            'libx264',
-            '-preset',
-            preset,
-            '-c:a',
-            'aac',
-            '-b:a',
-            '64k',
-            '-movflags',
-            '+faststart',
-            outName,
-          ];
-    const t1 = performance.now();
-    entry.exitCode = await ffmpeg.exec(args);
-    entry.execMs = Math.round(performance.now() - t1);
-    lastOut = { kind, bytes: await ffmpeg.readFile(outName) };
-    entry.outMB = +(lastOut.bytes.length / 1048576).toFixed(2);
-    await ffmpeg.deleteFile(inName);
+    const bytes =
+      engine === 'webcodecs'
+        ? await convertWebCodecs(file, kind, entry)
+        : await convertFFmpeg(file, kind, preset, entry);
+    lastOut = { kind, bytes };
+    entry.outKB = Math.round(bytes.length / 1024);
+    entry.fitsOneCall = bytes.length <= 1048576;
     $('send').disabled = false;
   } catch (e) {
     entry.err = String(e?.message ?? e);
@@ -163,6 +211,20 @@ $('convert').onclick = async () => {
   $('convert').disabled = false;
   show();
 };
+
+// WebCodecs capability checks (Q3), filled in asynchronously.
+(async () => {
+  results.webcodecs = {
+    encAvc: await canEncodeVideo('avc'),
+    encHevc: await canEncodeVideo('hevc'),
+    encOpus: await canEncodeAudio('opus'),
+    encAac: await canEncodeAudio('aac'),
+  };
+  show();
+})().catch((e) => {
+  results.webcodecs = { err: String(e?.message ?? e) };
+  show();
+});
 
 $('send').onclick = async () => {
   if (!lastOut) return;
