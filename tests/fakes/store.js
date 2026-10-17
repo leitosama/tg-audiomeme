@@ -84,6 +84,22 @@ export async function searchMemes(query) {
     .map((m) => ({ ...m }));
 }
 
+// --- Meme hub (/list, issue #18) ---
+
+/**
+ * @param {number} id
+ * @returns {Promise<Meme | null>}
+ */
+export async function getMeme(id) {
+  const meme = tables.memes.find((m) => m.id === id);
+  return meme ? { ...meme } : null;
+}
+
+/** @param {number} id */
+export async function deleteMeme(id) {
+  tables.memes = tables.memes.filter((m) => m.id !== id);
+}
+
 // --- Legacy import (issue #21) ---
 
 /** @returns {Promise<{ memes: number, users: number }>} */
