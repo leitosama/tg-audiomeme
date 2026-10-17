@@ -100,6 +100,29 @@ export async function deleteMeme(id) {
   tables.memes = tables.memes.filter((m) => m.id !== id);
 }
 
+// --- Hub rename and emoji (issue #19) ---
+
+/**
+ * @param {number} id
+ * @param {string} name
+ * @returns {Promise<boolean>}
+ */
+export async function renameMeme(id, name) {
+  const meme = tables.memes.find((m) => m.id === id);
+  if (!meme || tables.memes.some((m) => m.id !== id && m.name === name)) return false;
+  meme.name = name;
+  return true;
+}
+
+/**
+ * @param {number} id
+ * @param {string} emoji
+ */
+export async function setMemeEmoji(id, emoji) {
+  const meme = tables.memes.find((m) => m.id === id);
+  if (meme) meme.emoji = emoji;
+}
+
 // --- Send counting (issue #16) ---
 
 /**

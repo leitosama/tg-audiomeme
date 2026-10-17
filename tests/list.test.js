@@ -133,10 +133,10 @@ describe('meme detail view', () => {
     expect(buttonsOf(edit.reply_markup)).toEqual([['🎵 Bruh', `meme:show:${id}`]]);
   });
 
-  test('rename and emoji buttons are answered (wired in #19)', async () => {
+  test('a hub action this code no longer knows is just answered', async () => {
     const id = seedMeme({ name: 'Bruh' });
 
-    await tap(`meme:rename:${id}`);
+    await tap(`meme:gone:${id}`);
 
     expect(apiCalls.map((c) => c.method)).toEqual(['answerCallbackQuery']);
   });
