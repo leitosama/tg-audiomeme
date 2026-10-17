@@ -237,6 +237,8 @@ $('send').onclick = async () => {
     });
     entry.sendMs = Math.round(performance.now() - t0);
     entry.sent = res.sent;
+    entry.sendError = res.sendError;
+    entry.head = res.head;
   } catch (e) {
     entry.sendErr = String(e?.message ?? e);
   }

@@ -22,17 +22,23 @@ export default async function (input, ctx) {
     r.decoded = bytes ? bytes.length : 'no decoder';
   }
   if (input.send && bytes && r.user) {
-    const msg =
-      input.send === 'voice'
-        ? await api.sendVoice({
-            chat_id: r.user,
-            voice: new InputFile(bytes, 'meme.ogg', { type: 'audio/ogg' }),
-          })
-        : await api.sendVideoNote({
-            chat_id: r.user,
-            video_note: new InputFile(bytes, 'meme.mp4', { type: 'video/mp4' }),
-          });
-    r.sent = msg.voice ?? msg.video_note ?? null;
+    // Report Bot API failures instead of letting them become an opaque 500.
+    r.head = Array.from(bytes.subarray(0, 64), (b) => b.toString(16).padStart(2, '0')).join('');
+    try {
+      const msg =
+        input.send === 'voice'
+          ? await api.sendVoice({
+              chat_id: r.user,
+              voice: new InputFile(bytes, 'meme.ogg', { type: 'audio/ogg' }),
+            })
+          : await api.sendVideoNote({
+              chat_id: r.user,
+              video_note: new InputFile(bytes, 'meme.mp4', { type: 'video/mp4' }),
+            });
+      r.sent = msg.voice ?? msg.video_note ?? null;
+    } catch (e) {
+      r.sendError = `${e?.code ?? ''} ${e?.description ?? e?.message ?? e}`;
+    }
   }
   if (input.text && r.user) {
     await api.sendMessage({ chat_id: r.user, text: String(input.text).slice(0, 4000) });
