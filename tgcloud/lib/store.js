@@ -179,3 +179,60 @@ export async function recordSentMessage(id, seenAt) {
 export async function pruneSentMessages(before) {
   await db.delete(sentMessages).where(sql`${sentMessages.seenAt} < ${before}`).run();
 }
+
+// --- Approval and /users (issue #20) ---
+
+/**
+ * Makes the user known (so the admin can approve them), refreshing their display
+ * name; approval and send count are left as they are.
+ * @param {number} userId
+ * @param {string} displayName
+ */
+export async function registerUser(userId, displayName) {
+  await db
+    .insert(users)
+    .values({ userId, displayName })
+    .onConflictDoUpdate({ target: users.userId, set: { displayName } })
+    .run();
+}
+
+/**
+ * Whether the user is approved; unknown users aren't.
+ * @param {number} userId
+ * @returns {Promise<boolean>}
+ */
+export async function isUserApproved(userId) {
+  const row = await db
+    .select({ approved: users.approved })
+    .from(users)
+    .where(eq(users.userId, userId))
+    .get();
+  return row?.approved ?? false;
+}
+
+/**
+ * Every user: pending (unapproved) first, then most-sending, ties by user ID.
+ * @returns {Promise<User[]>}
+ */
+export async function listUsers() {
+  return db
+    .select()
+    .from(users)
+    .orderBy(asc(users.approved), desc(users.count), asc(users.userId))
+    .all();
+}
+
+/**
+ * Sets the user's approval; false when there is no such user.
+ * @param {number} userId
+ * @param {boolean} approved
+ * @returns {Promise<boolean>}
+ */
+export async function setUserApproved(userId, approved) {
+  const rows = await db
+    .update(users)
+    .set({ approved })
+    .where(eq(users.userId, userId))
+    .returning({ userId: users.userId });
+  return rows.length > 0;
+}

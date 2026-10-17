@@ -146,3 +146,46 @@ export async function pruneSentMessages(before) {
     if (seenAt < before) sentMessages.delete(id);
   }
 }
+
+// --- Approval and /users (issue #20) ---
+
+/**
+ * @param {number} userId
+ * @param {string} displayName
+ */
+export async function registerUser(userId, displayName) {
+  const user = tables.users.find((u) => u.userId === userId);
+  if (user) user.displayName = displayName;
+  else tables.users.push({ userId, displayName, approved: false, count: 0 });
+}
+
+/**
+ * @param {number} userId
+ * @returns {Promise<boolean>}
+ */
+export async function isUserApproved(userId) {
+  return tables.users.find((u) => u.userId === userId)?.approved ?? false;
+}
+
+/**
+ * Same order as the real `listUsers`: pending first, then by send count, then user ID.
+ * @returns {Promise<User[]>}
+ */
+export async function listUsers() {
+  return [...tables.users]
+    .sort(
+      (a, b) => Number(a.approved) - Number(b.approved) || b.count - a.count || a.userId - b.userId,
+    )
+    .map((u) => ({ ...u }));
+}
+
+/**
+ * @param {number} userId
+ * @param {boolean} approved
+ * @returns {Promise<boolean>}
+ */
+export async function setUserApproved(userId, approved) {
+  const user = tables.users.find((u) => u.userId === userId);
+  if (user) user.approved = approved;
+  return Boolean(user);
+}

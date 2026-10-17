@@ -1,5 +1,5 @@
 // handlers/message — runs on each `message` update: bot commands (/start, /add,
-// /list and its /delete alias) and the admin's
+// /list and its /delete alias, /users) and the admin's
 // pending conversation step (/add). The platform calls the default export with the Message.
 
 import { api } from 'sdk';
@@ -8,6 +8,7 @@ import { commandOf, isAdminPrivate } from '../lib/commands.js';
 import { startList } from '../lib/list.js';
 import { startReply } from '../lib/start.js';
 import { clearStep, getStep } from '../lib/store.js';
+import { startUsers } from '../lib/users.js';
 
 /** @typedef {import('@grammyjs/types').Message} Message */
 
@@ -43,6 +44,9 @@ export default async function (message) {
     case 'list':
     case 'delete':
       if (isAdmin) await startList(chatId);
+      return;
+    case 'users':
+      if (isAdmin) await startUsers(chatId);
       return;
   }
 }

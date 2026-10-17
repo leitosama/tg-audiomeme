@@ -245,8 +245,8 @@ describe('stale and foreign taps', () => {
     expect(callsTo('editMessageText')).toEqual([]);
   });
 
-  test('a button outside the hub is just answered', async () => {
-    await handleCallbackQuery(callbackQuery('user:approve:5'));
+  test('a button this code no longer knows is just answered', async () => {
+    await handleCallbackQuery(callbackQuery('gone:thing:5'));
 
     expect(apiCalls.map((c) => c.method)).toEqual(['answerCallbackQuery']);
   });
