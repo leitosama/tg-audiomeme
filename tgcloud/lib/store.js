@@ -114,3 +114,18 @@ export async function searchMemes(query) {
     (m) => m.name.toLowerCase().includes(needle) || m.emoji.toLowerCase().includes(needle),
   );
 }
+
+// --- Meme hub (/list, issue #18) ---
+
+/**
+ * @param {number} id
+ * @returns {Promise<Meme | null>}
+ */
+export async function getMeme(id) {
+  return (await db.select().from(memes).where(eq(memes.id, id)).get()) ?? null;
+}
+
+/** @param {number} id */
+export async function deleteMeme(id) {
+  await db.delete(memes).where(eq(memes.id, id)).run();
+}
