@@ -84,6 +84,22 @@ export async function searchMemes(query) {
     .map((m) => ({ ...m }));
 }
 
+// --- Leaderboards (issue #17) ---
+
+/** @returns {Promise<Meme[]>} */
+export async function topMemes() {
+  return (await searchMemes('')).filter((m) => m.count > 0).slice(0, 3);
+}
+
+/** @returns {Promise<User[]>} */
+export async function topUsers() {
+  return tables.users
+    .filter((u) => u.count > 0)
+    .sort((a, b) => b.count - a.count || a.userId - b.userId)
+    .slice(0, 3)
+    .map((u) => ({ ...u }));
+}
+
 // --- Meme hub (/list, issue #18) ---
 
 /**

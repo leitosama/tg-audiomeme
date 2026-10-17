@@ -3,7 +3,7 @@
 // which must keep the same exports — add each new query to both.
 
 import { db } from 'sdk';
-import { asc, desc, eq, sql } from 'sdk/db';
+import { asc, desc, eq, gt, sql } from 'sdk/db';
 import { conversationSteps, memes, sentMessages, users } from '../schema.js';
 
 /**
@@ -113,6 +113,39 @@ export async function searchMemes(query) {
   return rows.filter(
     (m) => m.name.toLowerCase().includes(needle) || m.emoji.toLowerCase().includes(needle),
   );
+}
+
+// --- Leaderboards (issue #17) ---
+
+/** Rows a leaderboard shows. */
+const TOP_LIMIT = 3;
+
+/**
+ * The most-sent memes (never-sent ones left out), ties by meme name.
+ * @returns {Promise<Meme[]>}
+ */
+export async function topMemes() {
+  return await db
+    .select()
+    .from(memes)
+    .where(gt(memes.count, 0))
+    .orderBy(desc(memes.count), asc(memes.name))
+    .limit(TOP_LIMIT)
+    .all();
+}
+
+/**
+ * The users with the most sends (those with none left out), ties by user ID.
+ * @returns {Promise<User[]>}
+ */
+export async function topUsers() {
+  return await db
+    .select()
+    .from(users)
+    .where(gt(users.count, 0))
+    .orderBy(desc(users.count), asc(users.userId))
+    .limit(TOP_LIMIT)
+    .all();
 }
 
 // --- Meme hub (/list, issue #18) ---

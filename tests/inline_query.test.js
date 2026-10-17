@@ -201,3 +201,115 @@ test('a failing answerInlineQuery is logged and does not throw', async () => {
   expect(log).toHaveBeenCalledWith(expect.stringContaining('2000'), error);
   log.mockRestore();
 });
+
+// --- Leaderboards (issue #17) ---
+
+/**
+ * The single article a leaderboard answer holds, as { title, text }.
+ * @param {Record<string, any>} params
+ */
+function leaderboard(params) {
+  expect(params.results).toHaveLength(1);
+  const [article] = params.results;
+  expect(article.type).toBe('article');
+  return { title: article.title, text: article.input_message_content.message_text };
+}
+
+describe('the stats leaderboard', () => {
+  test('lists the top three memes by send count', async () => {
+    seedMeme({ name: 'a', count: 2 });
+    seedMeme({ name: 'b', count: 1 });
+    seedMeme({ name: 'c', count: 5 });
+    seedMeme({ name: 'd', count: 3 });
+
+    await handleInlineQuery(inlineQuery('stats'));
+
+    expect(leaderboard(answer())).toEqual({
+      title: '🏆 Топ-3 мемов:',
+      text: '🏆 Топ-3 мемов:\n1. c — 5\n2. d — 3\n3. a — 2',
+    });
+  });
+
+  test('leaves out memes never sent', async () => {
+    seedMeme({ name: 'hit', count: 1 });
+    seedMeme({ name: 'unsent', count: 0 });
+
+    await handleInlineQuery(inlineQuery('stats'));
+
+    expect(leaderboard(answer()).text).toBe('🏆 Топ-3 мемов:\n1. hit — 1');
+  });
+
+  test('says there are no statistics yet when nothing was sent', async () => {
+    seedMeme({ name: 'unsent' });
+
+    await handleInlineQuery(inlineQuery('stats'));
+
+    expect(leaderboard(answer()).text).toBe('Пока нет статистики');
+  });
+
+  test('ignores case and surrounding whitespace', async () => {
+    seedMeme({ name: 'hit', count: 1 });
+
+    await handleInlineQuery(inlineQuery('  STATS '));
+
+    expect(leaderboard(answer()).text).toBe('🏆 Топ-3 мемов:\n1. hit — 1');
+  });
+
+  test('is answered uncached, by the query id', async () => {
+    await handleInlineQuery(inlineQuery('stats'));
+
+    expect(answer()).toMatchObject({ inline_query_id: 'iq-2000', cache_time: 0 });
+  });
+
+  test('has a non-numeric result id, so choosing it is not a send', async () => {
+    await handleInlineQuery(inlineQuery('stats'));
+
+    expect(answer().results[0].id).not.toMatch(/^\d+$/);
+  });
+});
+
+describe('the userstats leaderboard', () => {
+  /** @param {import('../tgcloud/lib/store.js').User} user */
+  const seedUser = (user) => tables.users.push(user);
+
+  test('lists the top three users by send count', async () => {
+    seedUser({ userId: 1, displayName: 'Alice', approved: false, count: 2 });
+    seedUser({ userId: 2, displayName: 'Bob', approved: true, count: 7 });
+    seedUser({ userId: 3, displayName: 'Carol', approved: false, count: 1 });
+    seedUser({ userId: 4, displayName: 'Dave', approved: false, count: 4 });
+    seedUser({ userId: 5, displayName: 'Eve', approved: false, count: 0 });
+
+    await handleInlineQuery(inlineQuery('userstats'));
+
+    expect(leaderboard(answer())).toEqual({
+      title: '🏆 Топ-3 пользователей:',
+      text: '🏆 Топ-3 пользователей:\n1. Bob — 7\n2. Dave — 4\n3. Alice — 2',
+    });
+  });
+
+  test('breaks send-count ties by user id', async () => {
+    seedUser({ userId: 9, displayName: 'Late', approved: false, count: 3 });
+    seedUser({ userId: 1, displayName: 'Early', approved: false, count: 3 });
+
+    await handleInlineQuery(inlineQuery('userstats'));
+
+    expect(leaderboard(answer()).text).toBe('🏆 Топ-3 пользователей:\n1. Early — 3\n2. Late — 3');
+  });
+
+  test('says there are no statistics yet when nobody has sent anything', async () => {
+    seedUser({ userId: 1, displayName: 'Idle', approved: true, count: 0 });
+
+    await handleInlineQuery(inlineQuery(' UserStats '));
+
+    expect(leaderboard(answer()).text).toBe('Пока нет статистики');
+    expect(answer().cache_time).toBe(0);
+  });
+
+  test('labels a user with no display name by their user id', async () => {
+    seedUser({ userId: 42, displayName: null, approved: false, count: 1 });
+
+    await handleInlineQuery(inlineQuery('userstats'));
+
+    expect(leaderboard(answer()).text).toBe('🏆 Топ-3 пользователей:\n1. 42 — 1');
+  });
+});
