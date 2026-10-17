@@ -3,11 +3,14 @@
   "private": true,
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "@grammyjs/types": "5.0.0",
     "@tgcloud/cli": "0.2.0",
     "@types/node": "26.6.5",
     "@vitest/coverage-v8": "5.0.4",
     "typescript": "7.0.2",
+    "vite": "^8.3.4",
     "vitest": "5.0.4"
   },
   "scripts": {

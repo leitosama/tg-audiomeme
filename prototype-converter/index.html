@@ -1,0 +1,50 @@
+<!doctype html>
+<!-- PROTOTYPE, wipe me: Converter measurement page (branch prototype/converter). -->
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Converter prototype</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+      body { font: 14px system-ui, sans-serif; margin: 12px; background: var(--tg-theme-bg-color, #fff); color: var(--tg-theme-text-color, #000); }
+      section { border: 1px solid #8884; border-radius: 8px; padding: 8px; margin-bottom: 10px; }
+      h2 { font-size: 15px; margin: 0 0 6px; }
+      button, select, input { font: inherit; margin: 2px 0; }
+      button { padding: 6px 10px; }
+      pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; max-height: 260px; overflow: auto; background: #8881; padding: 6px; }
+    </style>
+  </head>
+  <body>
+    <section>
+      <h2>1. Окружение</h2>
+      <pre id="env"></pre>
+    </section>
+    <section>
+      <h2>2. Лимит тела запроса</h2>
+      <button id="limit">Проверить 1/2/4/8/16/32 МБ</button>
+    </section>
+    <section>
+      <h2>3. Конвертация</h2>
+      <input id="file" type="file" accept="audio/*,video/*" /><br />
+      <select id="kind">
+        <option value="voice">→ голосовое (opus 64k)</option>
+        <option value="videonote">→ кружок (crop+640, x264)</option>
+      </select>
+      <select id="preset">
+        <option>fast</option>
+        <option>veryfast</option>
+        <option>ultrafast</option>
+      </select><br />
+      <button id="convert">Конвертировать</button>
+      <button id="send" disabled>Отправить мне</button>
+      <div id="progress"></div>
+    </section>
+    <section>
+      <h2>Результаты</h2>
+      <button id="report">Отправить результаты в чат</button>
+      <pre id="out"></pre>
+    </section>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
