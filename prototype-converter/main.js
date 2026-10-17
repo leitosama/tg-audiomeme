@@ -118,8 +118,9 @@ function probe(file) {
   });
 }
 
-// Q2: output capped so a 20 s video note stays under ~1 MB (one endpoint call).
-const VIDEO_BPS = 280_000;
+// Q2′: 380k video, notes trimmed to 15 s, so a note stays under ~1 MB (one call).
+const VIDEO_BPS = 380_000;
+const NOTE_MAX_S = 15;
 const AUDIO_NOTE_BPS = 48_000;
 const VOICE_BPS = 64_000;
 
@@ -160,6 +161,7 @@ async function convertWebCodecs(file, kind, entry) {
   const conversion = await Conversion.init({
     input,
     output,
+    ...(kind === 'voice' ? {} : { trim: { start: 0, end: NOTE_MAX_S } }),
     video:
       kind === 'voice'
         ? { discard: true }
