@@ -146,3 +146,16 @@ export async function pruneSentMessages(before) {
     if (seenAt < before) sentMessages.delete(id);
   }
 }
+
+// --- Legacy import (issue #21) ---
+
+/** @returns {Promise<{ memes: number, users: number }>} */
+export async function countMemesAndUsers() {
+  return { memes: tables.memes.length, users: tables.users.length };
+}
+
+/** @param {{ memes: import('../../tgcloud/lib/store.js').LegacyMeme[], users: User[] }} rows */
+export async function insertLegacyRows(rows) {
+  tables.memes.push(...structuredClone(rows.memes));
+  tables.users.push(...structuredClone(rows.users));
+}
