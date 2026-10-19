@@ -57,31 +57,23 @@ On activity the bot checks a few stored `file_id`s with `getFile`; a meme whose 
 fails twice in a row is hidden from inline results, marked in `/list` and reported to the
 admin ([ADR-0006](docs/adr/0006-keep-meme-media-alive.md)).
 
-## Bot instances
+## Configuration
 
-The same code runs as several **bot instances**, each with its own token, admin and
-library. Each one is a GitHub Environment holding:
+The same code can run as several bots, each with its own token, admin and library. Each
+bot needs:
 
-| Key                | Kind     | Description                                                           |
-| ------------------ | -------- | --------------------------------------------------------------------- |
-| `TGCLOUD_TOKEN`    | secret   | The bot's tgcloud token, `app<id>:<secret>`. Also gives the Converter's URL, `https://app<id>.tgcloud.ai/`. |
-| `ADMIN_ID`         | secret   | Telegram ID of the single admin.                                      |
-| `REQUIRE_APPROVAL` | variable | `true` or `false` (default): gate inline usage behind approval.       |
+| Key                | Description                                                           |
+| ------------------ | --------------------------------------------------------------------- |
+| `TGCLOUD_TOKEN`    | The bot's tgcloud token, `app<id>:<secret>`. Also gives the Converter's URL, `https://app<id>.tgcloud.ai/`. |
+| `ADMIN_ID`         | Telegram ID of the single admin.                                      |
+| `REQUIRE_APPROVAL` | `true` or `false` (default): gate inline usage behind approval.       |
 
 tgcloud has no runtime environment variables, so `scripts/gen-config.js` bakes these into
 the gitignored `tgcloud/lib/config.js` at deploy time
 ([ADR-0003](docs/adr/0003-per-bot-config-from-github-environments.md)).
 
-| Environment             | Deployed by                                                 |
-| ----------------------- | ----------------------------------------------------------- |
-| `prod-audiotinkoff_bot` | every push to `main`                                        |
-| `prod-privatebot`       | every push to `main`, after `prod-audiotinkoff_bot` succeeds |
-| `dev`                   | pushes to `claude/*` branches, and Actions → tgcloud → Run workflow on any branch |
-
-To add a bot instance: create a `prod-<bot username>` Environment with the keys above, add
-it to the `deploy` job's matrix in [`.github/workflows/tgcloud.yml`](.github/workflows/tgcloud.yml),
-and in @BotFather turn on inline mode (`/setinline`) and inline feedback
-(`/setinlinefeedback`).
+In [@BotFather](https://t.me/BotFather), turn on inline mode (`/setinline`) and inline
+feedback (`/setinlinefeedback`).
 
 ## Local development
 
@@ -103,21 +95,18 @@ npx tgcloud run handlers/message '{ … }'  # run a module in the cloud without 
 npm run deploy                           # build the Converter and push to the linked bot
 ```
 
-Prefer deploying through CI: it regenerates the config from the Environment and applies
-safe schema changes. Pushing by hand deploys whatever `tgcloud/lib/config.js` holds.
+Prefer deploying through CI: it regenerates the config and applies safe schema changes.
+Pushing by hand deploys whatever `tgcloud/lib/config.js` holds.
 
 ## CI/CD
 
 GitHub Actions ([`.github/workflows/tgcloud.yml`](.github/workflows/tgcloud.yml)):
 
-- **On every push and pull request**, the `check` job runs Biome, `tsc`, Vitest with
-  coverage and the Converter build.
-- **Deploys** (see [Bot instances](#bot-instances)) generate the config, build the
-  Converter, `tgcloud push --force`, apply safe schema changes with `tgcloud migrate --safe`,
-  and fail if anything non-safe is left for a human to apply.
-
-`main` is production: there is no staging and no release versioning. Work in `claude/*`
-branches (which deploy to the dev bot) and open PRs into `main`.
+- **On every pull request**, and on pushes that change what gets deployed (its `paths`
+  filter), the `check` job runs Biome, `tsc`, Vitest with coverage and the Converter build.
+- **Deploys** read each bot's keys from a GitHub Environment, generate the config, build
+  the Converter, `tgcloud push --force`, apply safe schema changes with
+  `tgcloud migrate --safe`, and fail if anything non-safe is left for a human to apply.
 
 ## The Converter
 
@@ -166,13 +155,13 @@ and names: keep them off git, issues, CI and chats other than the admin's, and d
 local copies once they're restored.
 
 To restore one, give each bot instance a local env file (gitignored, like every
-`.env.*` but `.env.example`) holding its `TGCLOUD_TOKEN` and `ADMIN_ID`, for example
-`.env.prod-privatebot`, and run:
+`.env.*` but `.env.example`) holding its `TGCLOUD_TOKEN` and `ADMIN_ID`,
+such as `.env.<bot>`, and run:
 
 ```bash
-npm run restore -- .env.prod-privatebot backup-2026-10-19-1530.json
+npm run restore -- .env.<bot> backup-2026-10-19-1530.json
 # The library isn't empty? Delete every meme and user first, then restore:
-npm run restore -- .env.prod-privatebot backup-2026-10-19-1530.json --clear
+npm run restore -- .env.<bot> backup-2026-10-19-1530.json --clear
 ```
 
 [`scripts/restore.js`](scripts/restore.js):
@@ -182,16 +171,43 @@ npm run restore -- .env.prod-privatebot backup-2026-10-19-1530.json --clear
 - copies the never-deployed endpoints in [`scripts/tgcloud/endpoints/`](scripts/tgcloud/endpoints)
   into `tgcloud/endpoints/` and runs them as the admin (`--ctx`) with `tgcloud run`, which
   executes local code in the cloud without deploying it;
+- creates the gitignored `.tgcloud/` in this checkout if it's missing: the CLI works in the
+  nearest folder holding one, so without it a fresh clone or a git worktree would run
+  another checkout's code and fail with `Module not found`;
 - leaves out the line where `tgcloud run` echoes its argument, the whole backup;
 - always deletes the copies afterwards, and puts `tgcloud/lib/config.js` back as it was.
 
-The restore checks the whole file first and refuses unless both tables are empty. It
+The bot instance must already be deployed: the deploy's migrate step creates the
+tables the restore fills. A successful restore ends with `< {memes:N,users:M}`. The
+restore checks the whole file first and refuses unless both tables are empty. It
 isn't atomic: if it fails part-way, run it again with `--clear`. Should a copy of
 `restore` or `clear_library` ever be left behind, it's gitignored, `npm run deploy` and
 CI refuse to push it, and the endpoints refuse every caller but the admin.
 
+To check a bot instance after a restore (both commands change nothing):
+
+```bash
+# The webhook matches the deployed handlers and no updates are pending.
+node --env-file=.env.<bot> node_modules/@tgcloud/cli/bin/tgcloud.js webhook
+# The rows are there: a second restore must refuse with "already holds N row(s)".
+npm run restore -- .env.<bot> backup-2026-10-19-1530.json
+```
+
+Then, in Telegram:
+- `@<bot>` with no text lists the memes, and text after it searches;
+- one sent meme plays (its `file_id` still works) and its count grows in `/list`;
+- `@<bot> stats` and `@<bot> userstats` show the restored leaderboards;
+- `/users` lists the users, if approval is on.
+
 `restore` also accepts a Python bot instance's tables exported with `sqlite3 -json`,
-which is how an instance moved to tgcloud. On the old server, with the bot stopped:
+which is how an instance moved to tgcloud:
+1. stop the Python bot and export its tables;
+2. deploy the bot (see [CI/CD](#cicd));
+3. restore the export;
+4. run the checks above.
+
+The library is empty between steps 2 and 3. The export, on the old server with the bot
+stopped:
 
 ```bash
 memes=$(sqlite3 -json db/audio_meme.db 'SELECT * FROM memes')

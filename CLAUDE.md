@@ -38,7 +38,7 @@ priority over it. Coverage thresholds are 80% (`vitest.config.js`).
 | `scripts/tgcloud/`     | Never-deployed, admin-only modules mirroring `tgcloud/` (`endpoints/restore.js`, `endpoints/clear_library.js`). `npm run restore` (`scripts/restore.js`) copies them into `tgcloud/endpoints/` for one `tgcloud run` and deletes them; `scripts/check-deploy.js` refuses to push while a copy exists. |
 | `tests/`, `types/`     | Vitest tests with fakes; ambient types for the SDK and runtime. |
 | `docs/tgcloud-sdk.md`  | Full SDK reference (db, Bot API, fetch, endpoints). |
-| `.tgcloud/`            | CLI state. **Never edit or read from here**; gitignored. |
+| `.tgcloud/`            | CLI state. **Never edit or read from here**; gitignored. The CLI chdirs into the nearest ancestor holding one, so a checkout without it (a worktree) runs another checkout's code. |
 
 Only `.js` files under `tgcloud/` are deployed as code, plus the `dist/` build as the Mini
 App's static files. A module's name is its path inside `tgcloud/` without `.js`
@@ -84,6 +84,14 @@ App's static files. A module's name is its path inside `tgcloud/` without `.js`
   `migrate` applies them (CI applies safe ones and fails on the rest).
 - The platform manages the webhook from the deployed handlers; `npx tgcloud webhook`
   shows drift and `npx tgcloud webhook sync` repairs it.
+- **`push` ships every `.js` under `tgcloud/`**, gitignored or not, and every file in
+  `endpoints/` is a public `POST /api/<name>`. An endpoint meant only for the admin checks
+  `ctx.initData.user.id === ADMIN_ID` itself.
+- **`tgcloud run`** sends all local `tgcloud/` sources (the local `config.js` included) and
+  prints its argument back, so a large or private argument goes through `npm run restore`
+  or a wrapper that hides that line.
+- The CLI's real behaviour lives in `node_modules/@tgcloud/cli/src/`; read it there when
+  a command surprises you, before guessing.
 - The Mini App is served from the host root; never add `X-Frame-Options` or a restrictive
   `frame-ancestors` (Telegram Web opens it in an iframe).
 
@@ -97,11 +105,19 @@ the fake Bot API's calls. No real Telegram or tgcloud calls.
 - Biome (2-space, single quotes, line width 100) and `tsc --strict` on JSDoc are mandatory.
 - When adding a config key: `scripts/gen-config.js` (+ its test), `lib/config.d.ts`,
   `tests/fakes/config.js`, `.env.example`, every GitHub Environment, the workflow's `env`,
-  and the README's "Bot instances" table.
-- **`main` is production**: every push deploys each `prod-<bot username>` Environment in
-  turn (`.github/workflows/tgcloud.yml`). Work in `claude/*` branches — pushes to them
-  deploy the `dev` bot — and open PRs into `main`. A new bot instance needs its
-  Environment added to the deploy matrix.
+  and the README's "Configuration" table.
+- **`main` is production**: a push that touches a deployed input (the `push.paths` filter
+  in `.github/workflows/tgcloud.yml`) deploys each `prod-<bot username>` Environment in
+  turn; docs/tests-only pushes don't. Work in `claude/*` branches — such pushes to them
+  deploy the `dev` bot — and open PRs into `main`. If you add a file the deploy reads,
+  add it to `paths`. A new bot instance needs its Environment added to the deploy matrix.
+- **Workflows stay plain GitHub Actions**: `on.<event>.paths`, `environment`, `matrix`,
+  `workflow_dispatch` inputs. Reach for these before any scripted job.
+- **README describes the project**: features, configuration keys, development, restore.
+  Deployment specifics (Environment names, bot usernames) live only in the workflow.
+- **Bot data stays on the operator's machine.** Backups, `sqlite3` exports and
+  `.env.<bot>` files hold user IDs, names and tokens; they're gitignored, move over `scp`,
+  and are handled in a local terminal. This repo is public, and so are its Actions logs.
 
 ## Agent skills
 

@@ -9,7 +9,7 @@
 // is left out of the output.
 
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { stdin, stdout } from 'node:process';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
@@ -104,6 +104,9 @@ async function main(envFile, backupFile, clear) {
     process.exit(130);
   });
   try {
+    // The CLI works in the nearest ancestor holding .tgcloud/; without one here (a fresh
+    // clone, a git worktree) it would run another checkout's modules, or find no copy.
+    mkdirSync(`${root}.tgcloud`, { recursive: true });
     writeFileSync(CONFIG_PATH, config);
     for (const name of OPERATOR_ENDPOINTS) copyFileSync(sourceOf(name), copyOf(name));
     for (const args of runCommands({ backupJson, adminId, clear })) {
