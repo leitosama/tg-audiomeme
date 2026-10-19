@@ -19,6 +19,8 @@ export function resetStore() {
   tables.users = [];
   tables.steps = [];
   sentMessages.clear();
+  backupState.nextAt = Number.MAX_SAFE_INTEGER;
+  backupState.hash = null;
 }
 
 // --- Conversation steps and adding memes (/add, issue #14) ---
@@ -230,15 +232,87 @@ export async function setUserApproved(userId, approved) {
   return Boolean(user);
 }
 
-// --- Legacy import (issue #21) ---
+// --- Backup and restore (issues #21, backups) ---
 
 /** @returns {Promise<{ memes: number, users: number }>} */
 export async function countMemesAndUsers() {
   return { memes: tables.memes.length, users: tables.users.length };
 }
 
-/** @param {{ memes: import('../../tgcloud/lib/store.js').LegacyMeme[], users: User[] }} rows */
-export async function insertLegacyRows(rows) {
+/** @param {{ memes: import('../../tgcloud/lib/store.js').RestoredMeme[], users: User[] }} rows */
+export async function insertRows(rows) {
   tables.memes.push(...structuredClone(rows.memes));
   tables.users.push(...structuredClone(rows.users));
+}
+
+/** @returns {Promise<{ memes: number, users: number }>} */
+export async function deleteMemesAndUsers() {
+  const deleted = await countMemesAndUsers();
+  tables.memes = [];
+  tables.users = [];
+  return deleted;
+}
+
+/**
+ * Same rows as the real dump: SQLite column names, approval as 0/1, id order. A meme
+ * added by the fake `addMeme` has no creation date, so it dumps as null.
+ * @returns {Promise<import('../../tgcloud/lib/store.js').TableDump>}
+ */
+export async function dumpMemesAndUsers() {
+  return {
+    memes: [...tables.memes]
+      .sort((a, b) => a.id - b.id)
+      .map((m) => ({
+        id: m.id,
+        name: m.name,
+        file_id: m.fileId,
+        media_type: m.mediaType,
+        emoji: m.emoji,
+        count: m.count,
+        created_at: /** @type {{ createdAt?: string | null }} */ (m).createdAt ?? null,
+      })),
+    users: [...tables.users]
+      .sort((a, b) => a.userId - b.userId)
+      .map((u) => ({
+        userid: u.userId,
+        displayname: u.displayName,
+        approved: u.approved ? 1 : 0,
+        count: u.count,
+      })),
+  };
+}
+
+/**
+ * The backup_state row. `resetStore` makes the automatic check not due, so handler tests
+ * see no backup; backup tests set `nextAt` themselves.
+ */
+export const backupState = {
+  nextAt: Number.MAX_SAFE_INTEGER,
+  hash: /** @type {string | null} */ (null),
+};
+
+/**
+ * @param {number} now
+ * @param {number} nextAt
+ * @returns {Promise<boolean>}
+ */
+export async function claimBackupCheck(now, nextAt) {
+  if (backupState.nextAt > now) return false;
+  backupState.nextAt = nextAt;
+  return true;
+}
+
+/** @param {number} nextAt */
+export async function setBackupNextAt(nextAt) {
+  backupState.nextAt = nextAt;
+}
+
+/** @returns {Promise<string | null>} */
+export async function getBackupHash() {
+  return backupState.hash;
+}
+
+/** @param {string} hash */
+export async function setBackupHash(hash) {
+  backupState.hash = hash;
 }

@@ -50,3 +50,11 @@ export const sentMessages = table(
     seenAtIdx: index('sent_messages_seen_at').on(t.seenAt),
   }),
 );
+
+// When the next automatic backup check may run (`next_at`, epoch ms) and a hash of the
+// last backup sent, so an unchanged library isn't sent again (ADR-0005). One row, id 1.
+export const backupState = table('backup_state', {
+  id: integer('id').primaryKey(),
+  nextAt: integer('next_at').notNull(),
+  hash: text('hash'),
+});

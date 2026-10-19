@@ -22,6 +22,8 @@ A single admin (`ADMIN_ID`) manages memes via direct messages to the bot:
   Each meme shows its all-time send count. (`/delete` opens the same hub.)
 - **`/users`** — list users with their usage count and approve/revoke them via
   inline buttons (relevant when `REQUIRE_APPROVAL` is on).
+- **`/backup`** — get a backup of the memes and users now (see
+  [Backups and restore](#backups-and-restore)).
 
 > **Admin's privacy settings.** To store a converted audio or video file, the bot
 > sends it to the admin's chat as a voice message or video note. If the admin's
@@ -138,6 +140,35 @@ The `users` table:
 - `approved` — whether the user may send memes (only enforced when
   `REQUIRE_APPROVAL` is on);
 - `count` — number of memes the user has sent.
+
+## Backups and restore
+
+On tgcloud the database can't be reached directly, so the bot sends its admin backups:
+JSON documents holding the `memes` and `users` tables (the rows described above, with
+SQLite column names). Meme media isn't included: the stored `file_id`s keep working as
+long as the bot (its token) is the same.
+
+- **Automatically**, silently, after any update to the bot, at most once a day and only
+  if the data changed since the last backup sent. A failed send is retried an hour later.
+- **On demand** with `/backup`, which always sends one and restarts the daily timer.
+
+Backups pile up in the chat; the newest one is the current state. To restore one,
+copy the never-deployed scripts in [`scripts/tgcloud/endpoints/`](scripts/tgcloud/endpoints)
+next to the bot's code, run them against the bot instance, then delete the copies:
+
+```bash
+cp scripts/tgcloud/endpoints/{clear_library,restore}.js tgcloud/endpoints/
+# Only if the library isn't empty: delete every meme and user (needs this exact text).
+npx tgcloud run endpoints/clear_library '{ confirm: "delete memes and users" }'
+# Restore: checks the whole file first, then refuses unless both tables are empty.
+npx tgcloud run endpoints/restore "$(cat backup-2026-10-19-1530.json)"
+rm tgcloud/endpoints/{clear_library,restore}.js
+```
+
+`restore` also accepts a Python bot instance's tables exported with
+`sqlite3 -json` (`{ "memes": [...], "users": [...] }`), which is how an instance moves to
+tgcloud. The file travels as one command-line argument; macOS allows about 1 MB, enough
+for thousands of memes.
 
 ## License
 

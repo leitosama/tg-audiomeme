@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
-import importLegacy from '../scripts/tgcloud/endpoints/import_legacy.js';
-import { addMeme, tables } from './fakes/store.js';
+import clearLibrary from '../scripts/tgcloud/endpoints/clear_library.js';
+import restore from '../scripts/tgcloud/endpoints/restore.js';
+import { addMeme, dumpMemesAndUsers, tables } from './fakes/store.js';
 
 /** A Python bot instance's data as `sqlite3 -json` prints its memes and users tables. */
 function legacyExport() {
@@ -32,10 +33,10 @@ function legacyExport() {
   };
 }
 
-/** Runs the import the way `tgcloud run endpoints/import_legacy "$(cat export.json)"` does. */
-const run = (/** @type {unknown} */ input) => importLegacy(input, {});
+/** Runs the restore the way `tgcloud run endpoints/restore "$(cat backup.json)"` does. */
+const run = (/** @type {unknown} */ input) => restore(input, {});
 
-describe('legacy import', () => {
+describe('restore', () => {
   test('copies every meme and user field, keeping ids, counts and dates', async () => {
     const result = await run(legacyExport());
 
@@ -73,6 +74,18 @@ describe('legacy import', () => {
     expect(tables.memes.find((m) => m.name === 'Новый')?.id).toBe(8);
   });
 
+  test('restores a backup of the same rows, as JSON, unchanged', async () => {
+    await run(legacyExport());
+    const backup = JSON.parse(JSON.stringify(await dumpMemesAndUsers()));
+    const before = structuredClone(tables);
+
+    await clearLibrary({ confirm: 'delete memes and users' }, {});
+    expect(await run(backup)).toEqual({ memes: 2, users: 2 });
+
+    expect(tables).toEqual(before);
+    expect(backup).toEqual(legacyExport());
+  });
+
   test('an instance with no users yet imports its memes', async () => {
     expect(await run({ ...legacyExport(), users: [] })).toEqual({ memes: 2, users: 0 });
   });
@@ -101,8 +114,8 @@ describe('legacy import', () => {
   };
 
   test.each([
-    ['nothing', undefined, /export must be an object/],
-    ['an array', [], /export must be an object/],
+    ['nothing', undefined, /backup must be an object/],
+    ['an array', [], /backup must be an object/],
     ['no users', { memes: [] }, /"users" must be an array/],
     ['memes as an object', { memes: {}, users: [] }, /"memes" must be an array/],
     ['a meme that is not an object', { memes: [7], users: [] }, /memes\[0\] must be an object/],
@@ -120,7 +133,7 @@ describe('legacy import', () => {
     ['a numeric display name', withUser({ displayname: 5 }), /users\[0\]\.displayname/],
     ['a missing user send count', withUser({ count: undefined }), /users\[0\]\.count/],
     ['a repeated user id', withUser({ userid: 2001 }), /users\[1\]\.userid 2001 is repeated/],
-  ])('rejects an export with %s, importing nothing', async (_, input, message) => {
+  ])('rejects a backup with %s, restoring nothing', async (_, input, message) => {
     await expect(run(input)).rejects.toThrow(message);
     expect(tables.memes).toEqual([]);
     expect(tables.users).toEqual([]);
@@ -136,3 +149,27 @@ const existingMeme = /** @type {const} */ ({
   count: 5,
 });
 const existingUser = { userId: 1, displayName: 'Old', approved: true, count: 1 };
+
+describe('clear_library', () => {
+  test('deletes every meme and user when confirmed', async () => {
+    await run(legacyExport());
+
+    expect(await clearLibrary({ confirm: 'delete memes and users' }, {})).toEqual({
+      memes: 2,
+      users: 2,
+    });
+    expect(tables.memes).toEqual([]);
+    expect(tables.users).toEqual([]);
+  });
+
+  test.each([undefined, {}, { confirm: 'yes' }, { confirm: 'Delete memes and users' }])(
+    'deletes nothing without the exact confirmation (%j)',
+    async (input) => {
+      await run(legacyExport());
+
+      await expect(clearLibrary(input, {})).rejects.toThrow(/Nothing was deleted/);
+      expect(tables.memes).toHaveLength(2);
+      expect(tables.users).toHaveLength(2);
+    },
+  );
+});

@@ -31,6 +31,15 @@ The admin's Mini App that turns an arbitrary audio or video file into a meme's v
 message or video note while adding a meme.
 _Avoid_: Mini App, web app, uploader
 
+**Backup**:
+A copy of a bot instance's memes and users, sent to its admin as a file, from which
+they can be restored.
+_Avoid_: dump, export, snapshot
+
+**Restore**:
+Refilling a bot instance's empty library and users from a backup.
+_Avoid_: import, recovery
+
 **Admin**:
 The single Telegram user who curates a bot instance's library and approves users.
 _Avoid_: owner, moderator

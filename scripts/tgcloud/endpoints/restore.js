@@ -1,22 +1,23 @@
-// One-off import of a Python bot instance's SQLite data into its tgcloud database
-// (issue #21). Never deployed: the operator copies this file to
-// tgcloud/endpoints/import_legacy.js, runs it once with
-//   npx tgcloud run endpoints/import_legacy "$(cat export.json)"
-// where export.json is `{ "memes": [...], "users": [...] }` as `sqlite3 -json` prints the
-// two tables, then deletes the copy. Its imports are written for that location.
+// Restores a bot instance's memes and users into its tgcloud database from a backup the
+// bot sent to its admin, or from a Python bot instance's `sqlite3 -json` export of the
+// two tables (issue #21): both are `{ "memes": [...], "users": [...] }` with SQLite column
+// names. Never deployed: the operator copies this file to tgcloud/endpoints/restore.js,
+// runs it once with
+//   npx tgcloud run endpoints/restore "$(cat backup.json)"
+// then deletes the copy. Its imports are written for that location. README "Backups and
+// restore" has the whole runbook.
 //
-// The whole export is checked before anything is written, and the import refuses to
-// run unless both tables are empty, so a bad file or a second run changes nothing.
-// The platform's db has no transactions, so the insert itself (memes, then users, in
-// chunks of 100 rows) isn't atomic: if it fails part-way, the rows already written
-// stay and every retry is refused. To recover, empty both tables by hand (e.g.
-// `DELETE FROM memes` and `DELETE FROM users` via `db.run` from a throwaway module run
-// with `npx tgcloud run`), then run the import again.
+// The whole file is checked before anything is written, and the restore refuses to run
+// unless both tables are empty, so a bad file or a second run changes nothing; empty
+// them first with clear_library.js. The platform's db has no transactions, so the insert
+// itself (memes, then users, in chunks of 100 rows) isn't atomic: if it fails part-way,
+// the rows already written stay and every retry is refused. To recover, run
+// clear_library.js and then the restore again.
 
 import { EndpointError } from 'sdk';
-import { countMemesAndUsers, insertLegacyRows } from '../lib/store.js';
+import { countMemesAndUsers, insertRows } from '../lib/store.js';
 
-/** @typedef {import('../lib/store.js').LegacyMeme} LegacyMeme */
+/** @typedef {import('../lib/store.js').RestoredMeme} RestoredMeme */
 /** @typedef {import('../lib/store.js').User} User */
 /** @typedef {Record<string, unknown>} Row */
 
@@ -25,11 +26,11 @@ const isObject = (value) => typeof value === 'object' && value !== null && !Arra
 
 /** @param {string} message @returns {never} */
 function reject(message) {
-  throw new EndpointError(`Malformed export: ${message}. Nothing was imported.`);
+  throw new EndpointError(`Malformed backup: ${message}. Nothing was restored.`);
 }
 
 /**
- * Reads one field of an exported row, rejecting the export unless `valid` accepts it.
+ * Reads one field of an exported row, rejecting the backup unless `valid` accepts it.
  * @template T
  * @param {Row} row
  * @param {string} where e.g. `memes[3]`
@@ -60,7 +61,7 @@ const isMediaType = (v) => v === 'audio' || v === 'video';
 const isFlag = (v) => v === 0 || v === 1;
 
 /**
- * The export's `key` array, each row converted by `convert`.
+ * The backup's `key` array, each row converted by `convert`.
  * @template T
  * @param {Row} data
  * @param {'memes' | 'users'} key
@@ -78,7 +79,7 @@ function rows(data, key, convert) {
 }
 
 /**
- * Rejects the export if two rows share a value of `field`.
+ * Rejects the backup if two rows share a value of `field`.
  * @template {Row} T
  * @param {T[]} list
  * @param {'memes' | 'users'} key
@@ -95,14 +96,14 @@ function requireUnique(list, key, prop, column) {
 }
 
 /**
- * @param {unknown} input `{ memes, users }` as `sqlite3 -json` prints the two tables
+ * @param {unknown} input `{ memes, users }`: a backup or `sqlite3 -json` export of the two tables
  * @param {unknown} _ctx
- * @returns {Promise<{ memes: number, users: number }>} how many rows were imported
+ * @returns {Promise<{ memes: number, users: number }>} how many rows were restored
  */
-export default async function importLegacy(input, _ctx) {
-  if (!isObject(input)) reject('the export must be an object { "memes": [...], "users": [...] }');
+export default async function restore(input, _ctx) {
+  if (!isObject(input)) reject('the backup must be an object { "memes": [...], "users": [...] }');
 
-  /** @type {LegacyMeme[]} */
+  /** @type {RestoredMeme[]} */
   const memes = rows(input, 'memes', (row, where) => ({
     id: field(row, where, 'id', isId, 'an integer'),
     name: field(row, where, 'name', isNonEmpty, 'a non-empty string'),
@@ -127,12 +128,12 @@ export default async function importLegacy(input, _ctx) {
   for (const table of /** @type {const} */ (['memes', 'users'])) {
     if (existing[table] > 0) {
       throw new EndpointError(
-        `The ${table} table already holds ${existing[table]} row(s); the import only runs ` +
-          'into empty tables. Nothing was imported.',
+        `The ${table} table already holds ${existing[table]} row(s); the restore only runs ` +
+          'into empty tables (run clear_library first). Nothing was restored.',
       );
     }
   }
 
-  await insertLegacyRows({ memes, users });
+  await insertRows({ memes, users });
   return { memes: memes.length, users: users.length };
 }

@@ -4,8 +4,8 @@ import { defineConfig } from 'vitest/config';
 
 const root = dirname(fileURLToPath(import.meta.url));
 
-// Modules kept outside the deployed tree but written to be copied into it (the legacy
-// import, issue #21) mirror tgcloud/ under this folder; their relative imports resolve as
+// Modules kept outside the deployed tree but written to be copied into it (restore and
+// clear_library) mirror tgcloud/ under this folder; their relative imports resolve as
 // if they sat in tgcloud/ (tsconfig.json does the same with `rootDirs`).
 const mirror = resolve(root, 'scripts/tgcloud');
 const tgcloud = resolve(root, 'tgcloud');

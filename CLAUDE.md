@@ -86,7 +86,11 @@ called as plain functions; assert on the mock bot's calls. No real Telegram API 
   writes it to `dist/`, which `tgcloud.jsonc` deploys; its endpoint is
   `tgcloud/endpoints/addConvertedMedia.js`, and its URL is derived from `TGCLOUD_TOKEN`.
   Its CI (`.github/workflows/tgcloud.yml`) deploys pushes to the rewrite branch to the
-  `dev` GitHub Environment. Feature PRs target `claude/tgcloud-rewrite`.
+  `dev` GitHub Environment. Feature PRs target `claude/tgcloud-rewrite`. Backups
+  (`tgcloud/lib/backup.js`, ADR-0005) ride on every update via the `checkingBackup`
+  handler wrapper; restoring uses the never-deployed `scripts/tgcloud/endpoints/`
+  (`restore.js`, `clear_library.js`), which the operator copies into `tgcloud/endpoints/`
+  for one `tgcloud run`.
 
 ## Agent skills
 

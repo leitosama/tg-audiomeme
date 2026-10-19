@@ -4,7 +4,7 @@
 
 import { db } from 'sdk';
 import { asc, desc, eq, gt, sql } from 'sdk/db';
-import { conversationSteps, memes, sentMessages, users } from '../schema.js';
+import { backupState, conversationSteps, memes, sentMessages, users } from '../schema.js';
 
 /**
  * @typedef {object} Meme
@@ -293,12 +293,20 @@ export async function setUserApproved(userId, approved) {
   return rows.length > 0;
 }
 
-// --- Legacy import (issue #21) ---
+// --- Backup and restore (issues #21, backups) ---
 
 /**
- * A meme as the Python bot stored it, with its creation date (SQLite `CURRENT_TIMESTAMP`
- * text, or null).
- * @typedef {Meme & { createdAt: string | null }} LegacyMeme
+ * A meme with its creation date (SQLite `CURRENT_TIMESTAMP` text, or null), as a backup or
+ * the Python bot's export holds it.
+ * @typedef {Meme & { createdAt: string | null }} RestoredMeme
+ */
+
+/**
+ * The memes and users tables as raw rows: SQLite column names and values (approval as
+ * 0/1), the shape `sqlite3 -json` prints and the restore script reads.
+ * @typedef {object} TableDump
+ * @property {Record<string, unknown>[]} memes
+ * @property {Record<string, unknown>[]} users
  */
 
 /** Rows per INSERT, keeping each statement well under SQLite's bound-parameter limit. */
@@ -314,9 +322,9 @@ export async function countMemesAndUsers() {
 
 /**
  * Inserts memes and users exactly as given, ids included.
- * @param {{ memes: LegacyMeme[], users: User[] }} rows
+ * @param {{ memes: RestoredMeme[], users: User[] }} rows
  */
-export async function insertLegacyRows(rows) {
+export async function insertRows(rows) {
   for (const [target, list] of [
     [memes, rows.memes],
     [users, rows.users],
@@ -328,4 +336,81 @@ export async function insertLegacyRows(rows) {
         .run();
     }
   }
+}
+
+/**
+ * Deletes every meme, then every user.
+ * @returns {Promise<{ memes: number, users: number }>} how many rows were deleted
+ */
+export async function deleteMemesAndUsers() {
+  const deletedMemes = (await db.run(sql`DELETE FROM memes`)).rowsAffected;
+  const deletedUsers = (await db.run(sql`DELETE FROM users`)).rowsAffected;
+  return { memes: deletedMemes, users: deletedUsers };
+}
+
+/**
+ * Both tables as raw rows (raw SQL skips the builder's mode conversion), in id order.
+ * @returns {Promise<TableDump>}
+ */
+export async function dumpMemesAndUsers() {
+  return {
+    memes: await db.all(
+      sql`SELECT id, name, file_id, media_type, emoji, count, created_at FROM memes ORDER BY id`,
+    ),
+    users: await db.all(
+      sql`SELECT userid, displayname, approved, count FROM users ORDER BY userid`,
+    ),
+  };
+}
+
+/** Makes sure the single backup_state row exists; a new one is due at once. */
+async function ensureBackupState() {
+  await db
+    .insert(backupState)
+    .values({ id: 1, nextAt: 0 })
+    .onConflictDoNothing({ target: backupState.id })
+    .run();
+}
+
+/**
+ * Claims the automatic backup check if it's due (`next_at <= now`), pushing it to
+ * `nextAt`. One conditional UPDATE, so of two updates racing only one wins.
+ * @param {number} now epoch ms
+ * @param {number} nextAt epoch ms
+ * @returns {Promise<boolean>} whether this caller claimed the check
+ */
+export async function claimBackupCheck(now, nextAt) {
+  await ensureBackupState();
+  const result = await db.run(
+    sql`UPDATE backup_state SET next_at = ${nextAt} WHERE id = 1 AND next_at <= ${now}`,
+  );
+  return result.rowsAffected === 1;
+}
+
+/**
+ * Sets when the next automatic backup check may run.
+ * @param {number} nextAt epoch ms
+ */
+export async function setBackupNextAt(nextAt) {
+  await ensureBackupState();
+  await db.update(backupState).set({ nextAt }).where(eq(backupState.id, 1)).run();
+}
+
+/**
+ * The hash of the last backup sent, or null before the first.
+ * @returns {Promise<string | null>}
+ */
+export async function getBackupHash() {
+  const row = await db
+    .select({ hash: backupState.hash })
+    .from(backupState)
+    .where(eq(backupState.id, 1))
+    .get();
+  return row?.hash ?? null;
+}
+
+/** @param {string} hash of the backup just sent */
+export async function setBackupHash(hash) {
+  await ensureBackupState();
+  await db.update(backupState).set({ hash }).where(eq(backupState.id, 1)).run();
 }

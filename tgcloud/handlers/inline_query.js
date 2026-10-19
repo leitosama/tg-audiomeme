@@ -4,6 +4,7 @@
 // only approved users get either.
 
 import { api } from 'sdk';
+import { checkingBackup } from '../lib/backup.js';
 import { loggingBotApiFailures } from '../lib/bot_api.js';
 import { REQUIRE_APPROVAL } from '../lib/config.js';
 import { leaderboardArticle } from '../lib/leaderboard.js';
@@ -28,7 +29,7 @@ const PENDING_RESULT = {
   input_message_content: { message_text: PENDING_TEXT },
 };
 
-export default loggingBotApiFailures('handlers/inline_query', handleInlineQuery);
+export default checkingBackup(loggingBotApiFailures('handlers/inline_query', handleInlineQuery));
 
 /** @param {InlineQuery} inlineQuery */
 async function handleInlineQuery(inlineQuery) {

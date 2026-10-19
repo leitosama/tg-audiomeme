@@ -1,6 +1,7 @@
 // handlers/chosen_inline_result — runs when a user picks one of the bot's inline results
 // (needs inline feedback on in @BotFather): counts a meme send, once.
 
+import { checkingBackup } from '../lib/backup.js';
 import { loggingBotApiFailures } from '../lib/bot_api.js';
 import {
   getMeme,
@@ -16,7 +17,7 @@ const SEEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /** @typedef {import('@grammyjs/types').ChosenInlineResult} ChosenInlineResult */
 /** @typedef {import('@grammyjs/types').Update} Update */
 
-export default loggingBotApiFailures('handlers/chosen_inline_result', countSend);
+export default checkingBackup(loggingBotApiFailures('handlers/chosen_inline_result', countSend));
 
 /**
  * @param {ChosenInlineResult} chosen
