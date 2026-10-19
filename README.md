@@ -182,16 +182,43 @@ npm run restore -- .env.prod-privatebot backup-2026-10-19-1530.json --clear
 - copies the never-deployed endpoints in [`scripts/tgcloud/endpoints/`](scripts/tgcloud/endpoints)
   into `tgcloud/endpoints/` and runs them as the admin (`--ctx`) with `tgcloud run`, which
   executes local code in the cloud without deploying it;
+- creates the gitignored `.tgcloud/` in this checkout if it's missing: the CLI works in the
+  nearest folder holding one, so without it a fresh clone or a git worktree would run
+  another checkout's code and fail with `Module not found`;
 - leaves out the line where `tgcloud run` echoes its argument, the whole backup;
 - always deletes the copies afterwards, and puts `tgcloud/lib/config.js` back as it was.
 
-The restore checks the whole file first and refuses unless both tables are empty. It
+The bot instance must already be deployed: the deploy's migrate step creates the
+tables the restore fills. A successful restore ends with `< {memes:N,users:M}`. The
+restore checks the whole file first and refuses unless both tables are empty. It
 isn't atomic: if it fails part-way, run it again with `--clear`. Should a copy of
 `restore` or `clear_library` ever be left behind, it's gitignored, `npm run deploy` and
 CI refuse to push it, and the endpoints refuse every caller but the admin.
 
+To check a bot instance after a restore (both commands change nothing):
+
+```bash
+# The webhook matches the deployed handlers and no updates are pending.
+node --env-file=.env.prod-privatebot node_modules/@tgcloud/cli/bin/tgcloud.js webhook
+# The rows are there: a second restore must refuse with "already holds N row(s)".
+npm run restore -- .env.prod-privatebot backup-2026-10-19-1530.json
+```
+
+Then, in Telegram:
+- `@<bot>` with no text lists the memes, and text after it searches;
+- one sent meme plays (its `file_id` still works) and its count grows in `/list`;
+- `@<bot> stats` and `@<bot> userstats` show the restored leaderboards;
+- `/users` lists the users, if approval is on.
+
 `restore` also accepts a Python bot instance's tables exported with `sqlite3 -json`,
-which is how an instance moved to tgcloud. On the old server, with the bot stopped:
+which is how an instance moved to tgcloud:
+1. stop the Python bot and export its tables;
+2. deploy the instance, by pushing to `main` with its Environment in the deploy matrix;
+3. restore the export;
+4. run the checks above.
+
+The library is empty between steps 2 and 3. The export, on the old server with the bot
+stopped:
 
 ```bash
 memes=$(sqlite3 -json db/audio_meme.db 'SELECT * FROM memes')

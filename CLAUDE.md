@@ -38,7 +38,7 @@ priority over it. Coverage thresholds are 80% (`vitest.config.js`).
 | `scripts/tgcloud/`     | Never-deployed, admin-only modules mirroring `tgcloud/` (`endpoints/restore.js`, `endpoints/clear_library.js`). `npm run restore` (`scripts/restore.js`) copies them into `tgcloud/endpoints/` for one `tgcloud run` and deletes them; `scripts/check-deploy.js` refuses to push while a copy exists. |
 | `tests/`, `types/`     | Vitest tests with fakes; ambient types for the SDK and runtime. |
 | `docs/tgcloud-sdk.md`  | Full SDK reference (db, Bot API, fetch, endpoints). |
-| `.tgcloud/`            | CLI state. **Never edit or read from here**; gitignored. |
+| `.tgcloud/`            | CLI state. **Never edit or read from here**; gitignored. The CLI chdirs into the nearest ancestor holding one, so a checkout without it (a worktree) runs another checkout's code. |
 
 Only `.js` files under `tgcloud/` are deployed as code, plus the `dist/` build as the Mini
 App's static files. A module's name is its path inside `tgcloud/` without `.js`
