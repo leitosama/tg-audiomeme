@@ -1,98 +1,106 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) and other coding agents when
+working with code in this repository.
 
 ## Overview
-Telegram bot for audio/video memes, modelled on the Stickers bot's inline-query UX.
-Python 3.12+, pyTelegramBotAPI (`telebot`), SQLite, long-polling. Deployed only via
-Docker Compose. User-facing bot strings are in Russian — keep new ones in Russian.
+Telegram bot for audio/video memes, modelled on the Stickers bot's inline-query UX. It
+runs on Telegram's serverless platform, **tgcloud**: plain JavaScript modules (JSDoc-typed,
+checked by `tsc`, nothing emitted) executed in a V8 isolate, plus a Mini App (the
+Converter). User-facing bot strings are in Russian — keep new ones in Russian. Spec:
+issue #12; decisions: `docs/adr/`; vocabulary: `CONTEXT.md`. The previous Python bot is
+preserved on the `python` branch (ADR-0001).
 
 ## Commands
 ```bash
-pip install -r requirements-dev.txt     # into a 3.12+ venv
-
-ruff check . && ruff format --check .   # lint + format (ruff format . to fix)
-mypy main.py                            # strict; follows the import into db.py
-pytest                                  # all tests + coverage (fails under 80% on main.py)
-pytest tests/test_handlers.py::test_name   # single test
-pytest -k inline --no-cov               # filter; --no-cov skips the coverage gate
-
-BOT_TOKEN=... ADMIN_ID=... python main.py   # run locally (needs ffmpeg on PATH)
-docker compose up -d [--build]          # pulls ghcr.io image by default; --build builds locally
+npm ci
+npm run config          # writes the gitignored tgcloud/lib/config.js from .env
+npm run check           # biome ci, tsc (bot + converter/), vitest --coverage, vite build
+npm run format          # biome check --write
+npx vitest run tests/list.test.js        # one file; -t '<name>' for one test
+npx tgcloud status      # local vs cloud
+npx tgcloud run <module> '<json5 args>' [--ctx '<json5>']   # run local code in the cloud, no deploy
+npm run deploy          # vite build && tgcloud push, to the bot linked locally
 ```
-CI (`.github/workflows/ci.yml`) runs exactly the lint/mypy/pytest commands above in one
-`check` job on every push/PR; on push to `main` it then builds and pushes a multi-arch
-(amd64/arm64) image to `ghcr.io/leitosama/tg-audiomeme` (`latest` + `sha-*`).
+`tgcloud login` links the project to a bot; `TGCLOUD_TOKEN` in the environment takes
+priority over it. Coverage thresholds are 80% (`vitest.config.js`).
+
+## Layout
+| Path                   | What it is |
+|------------------------|------------|
+| `tgcloud/schema.js`    | Database schema — tables as **named exports**. One file. |
+| `tgcloud/handlers/`    | Update handlers, **one level only**, named after Bot API update types: `message`, `callback_query`, `inline_query`, `chosen_inline_result`. The webhook's allowed updates come from this set. |
+| `tgcloud/lib/`         | Shared modules (subdirectories allowed). `store.js` is all DB access; `config.js` is generated. |
+| `tgcloud/endpoints/`   | Functions the Mini App calls (`POST /api/<name>`), one level only. Only `addConvertedMedia`. |
+| `converter/`           | The Converter Mini App (Vite + mediabunny, ADR-0004); pure decisions in `converter/plan.js`. Built to `dist/`, which `tgcloud.jsonc` deploys. |
+| `scripts/gen-config.js`| Generates `tgcloud/lib/config.js` (`ADMIN_ID`, `REQUIRE_APPROVAL`, `CONVERTER_URL` derived from `TGCLOUD_TOKEN`). |
+| `scripts/tgcloud/`     | Never-deployed modules mirroring `tgcloud/` (`endpoints/restore.js`, `endpoints/clear_library.js`); the operator copies them into `tgcloud/endpoints/` for one `tgcloud run`. |
+| `tests/`, `types/`     | Vitest tests with fakes; ambient types for the SDK and runtime. |
+| `docs/tgcloud-sdk.md`  | Full SDK reference (db, Bot API, fetch, endpoints). |
+| `.tgcloud/`            | CLI state. **Never edit or read from here**; gitignored. |
+
+Only `.js` files under `tgcloud/` are deployed as code, plus the `dist/` build as the Mini
+App's static files. A module's name is its path inside `tgcloud/` without `.js`
+(`handlers/message`).
 
 ## Architecture
-Two modules, no package:
+- **Handlers** get the update's payload (`Message`, `CallbackQuery`, …) as the first
+  argument and `ctx.update` as the second. Each is wrapped by `checkingBackup`
+  (`lib/backup.js`, ADR-0005: a daily backup to the admin rides on updates) and
+  `checkingMedia` (`lib/media_check.js`, ADR-0006: `getFile` on a few memes; two misses
+  mark a meme broken, hidden from inline results). There is no scheduler.
+- **Admin conversations** (`/add`, rename, change emoji) save their pending step in the
+  DB between updates (see `schema.js`), since there is no process memory between updates.
+  Every step honours `/cancel` / `❌ Отмена`. Admin = single `ADMIN_ID`, private chat only.
+- **Media**: only voice messages and video notes are memes (ADR-0002); anything else goes
+  through the Converter in the admin's browser, which posts to `addConvertedMedia`. Only
+  stored `file_id`s are ever sent (cached inline results).
+- **Inline UI** (`/list`, `/users`) edits the message in place via callback data
+  (`lib/callbacks.js`).
+- **Inline queries**: `stats` / `userstats` are reserved leaderboard queries (non-numeric
+  result ids); other results are memes with `result_id = String(meme.id)`. With
+  `REQUIRE_APPROVAL`, unapproved users get a pending article and answers are personal.
+- **Counting** happens in `chosen_inline_result` (needs BotFather `/setinlinefeedback`):
+  numeric result ids only, deduped by `inline_message_id`.
+- **Config** is baked in at deploy time from the bot instance's GitHub Environment
+  (ADR-0003); tgcloud has no runtime env vars or secrets.
 
-- **`main.py`** — config (env vars read at import time into module globals), the
-  module-level `bot = telebot.TeleBot(...)` and `db = AudioMemeDB(DB_PATH)` singletons,
-  every handler (registered via `@bot.*_handler` decorators at import), and `main()`.
-  `main()` validates `BOT_TOKEN`/`ADMIN_ID`, applies `TG_API_URL` (overrides both
-  `apihelper.API_URL` and `FILE_URL`), installs SIGTERM/SIGINT handlers, and calls
-  `bot.infinity_polling(skip_pending=True, allowed_updates=ALLOWED_UPDATES)`. The read
-  timeout is forced above the long-poll timeout. New update types must be added to
-  `ALLOWED_UPDATES` or Telegram won't deliver them.
-- **`db.py`** — `AudioMemeDB`: one shared `sqlite3` connection (`check_same_thread=False`)
-  guarded by a `threading.Lock`, WAL mode, because telebot runs handlers on worker
-  threads. Schema is created in `init_db()`; migrations are ad-hoc `PRAGMA table_info`
-  checks + `ALTER TABLE ADD COLUMN` there — add new columns the same way. Methods return
-  `Meme` NamedTuples / plain tuples.
-
-Key flows in `main.py`:
-- **Admin conversations** (`/add`, rename, change emoji) are multi-step via
-  `bot.register_next_step_handler(msg, next_fn, *args)`; state is passed as extra args,
-  not stored. Every step must honour cancel (`_cancel_requested` → `/cancel` or
-  `CANCEL_TEXT`). Admin gating is `_is_admin_private(message, tag)` (single `ADMIN_ID`,
-  private chat only).
-- **Media ingest**: voice/video_note `file_id`s are stored directly; plain audio/video files
-  are downloaded, transcoded with `ffmpeg` (OGG/Opus voice, ≤640px H.264 video note),
-  re-sent to the admin chat, and *that* message's `file_id` is stored — inline results use
-  `InlineQueryResultCachedVoice`/`CachedVideo`, so only stored `file_id`s are ever sent.
-- **Inline UI** (`/list`, `/users`) uses callback data `meme:<action>:<id>` and
-  `user:<action>:<id>`, editing the message in place.
-- **Inline queries**: `stats` / `userstats` are reserved queries returning leaderboard
-  articles (non-numeric result ids); otherwise results are memes with `result_id = str(meme.id)`.
-  With `REQUIRE_APPROVAL=true` (literal string `true`), unapproved users get a pending
-  article and answers are `is_personal`.
-- **Counting** happens in the `chosen_inline_result` handler (requires BotFather
-  `/setinlinefeedback`): only numeric result ids count, deduped by `inline_message_id`
-  in a bounded in-memory deque.
+## tgcloud rules that bite
+- **Imports**: project modules by relative path **with `.js`** (`'../lib/store.js'`); the
+  SDK by name (`import { db, api, fetch, EndpointError } from 'sdk'`,
+  `import { eq, sql } from 'sdk/db'`). Nothing outside `tgcloud/` is reachable; **no
+  filesystem, no npm packages** at runtime.
+- **`api.<method>({...})`** returns the unwrapped result and throws `BotApiError`
+  (`.code`/`.description`/`.parameters`).
+- **Endpoints**: `export default async function (input, ctx)`; `ctx.initData` is verified
+  by the platform (`ctx.initData.user` is the caller; invalid → 401). Refuse with
+  `throw new EndpointError(msg, { code })` → 400; any other exception is a generic 500.
+  The front-end calls `Telegram.WebApp.Serverless.call(name, input, cb)`.
+- **Database**: every call is async — always `await`. **No foreign keys** (`.references()`
+  throws): enforce integrity in code. Drops happen only via `.deprecated('reason')`;
+  deleting a declaration drops nothing. Type changes are manual `db.run(...)`.
+- **Deploying never touches the database.** `push` only reports schema changes;
+  `migrate` applies them (CI applies safe ones and fails on the rest).
+- The platform manages the webhook from the deployed handlers; `npx tgcloud webhook`
+  shows drift and `npx tgcloud webhook sync` repairs it.
+- The Mini App is served from the host root; never add `X-Frame-Options` or a restrictive
+  `frame-ancestors` (Telegram Web opens it in an iframe).
 
 ## Tests
-Tests import `main` directly (the module stays importable without a real token). Fixtures
-in `tests/conftest.py`: `bot` monkeypatches `main.bot` with a `MagicMock`; `env` also
-swaps `main.db` for a temp-file `AudioMemeDB` and sets `ADMIN_ID`; `make_message` /
-`make_inline_query` etc. build `SimpleNamespace` fakes of telebot objects. Handlers are
-called as plain functions; assert on the mock bot's calls. No real Telegram API calls.
+Vitest swaps `sdk`, `lib/store.js` and `lib/config.js` for fakes in `tests/fakes/`
+(`vitest.config.js`); `scripts/tgcloud/` imports resolve as if they sat in `tgcloud/`.
+Handlers are called as plain functions with payloads from `tests/payloads.js`; assert on
+the fake Bot API's calls. No real Telegram or tgcloud calls.
 
 ## Conventions & constraints
-- mypy `--strict` is mandatory (telebot is treated as untyped; see `pyproject.toml`).
-  ruff line length 100.
-- Logs go to stdout via `logging`; level from `LOG_LEVEL`.
-- DB defaults to `./db/audio_meme.db`; Compose mounts `./db` at `/app/db`. The Dockerfile
-  copies only `main.py` and `db.py` — update it if you add a module.
-- When adding an env var, update `.env.example`, `docker-compose.yml`, and the README table.
-- `main` is production (no staging, no versioning). Work in `claude/*` branches and open
-  PRs into `main`.
-- On the `claude/tgcloud-rewrite` branch, a JavaScript rewrite for Telegram's serverless
-  platform (tgcloud) is growing beside the Python bot (spec: issue #12). Platform rules
-  are in `AGENTS.md` and `docs/tgcloud-sdk.md`. `npm run check` runs Biome, `tsc` (bot and
-  `converter/`), Vitest with coverage and the build; `npm run config` generates the
-  gitignored `tgcloud/lib/config.js` from `.env`. The Converter (`converter/`, Vite +
-  mediabunny; decisions in the pure `converter/plan.js`) is the Mini App: `npm run build`
-  writes it to `dist/`, which `tgcloud.jsonc` deploys; its endpoint is
-  `tgcloud/endpoints/addConvertedMedia.js`, and its URL is derived from `TGCLOUD_TOKEN`.
-  Its CI (`.github/workflows/tgcloud.yml`) deploys pushes to the rewrite branch to the
-  `dev` GitHub Environment. Feature PRs target `claude/tgcloud-rewrite`. Backups
-  (`tgcloud/lib/backup.js`, ADR-0005) ride on every update via the `checkingBackup`
-  handler wrapper, and so does the media check (`tgcloud/lib/media_check.js`, ADR-0006,
-  `checkingMedia`), which calls `getFile` on a few memes per update and hides broken ones
-  from inline results; restoring uses the never-deployed `scripts/tgcloud/endpoints/`
-  (`restore.js`, `clear_library.js`), which the operator copies into `tgcloud/endpoints/`
-  for one `tgcloud run`.
+- Biome (2-space, single quotes, line width 100) and `tsc --strict` on JSDoc are mandatory.
+- When adding a config key: `scripts/gen-config.js` (+ its test), `lib/config.d.ts`,
+  `tests/fakes/config.js`, `.env.example`, every GitHub Environment, the workflow's `env`,
+  and the README's "Bot instances" table.
+- **`main` is production**: every push deploys each `prod-<bot username>` Environment in
+  turn (`.github/workflows/tgcloud.yml`). Work in `claude/*` branches — pushes to them
+  deploy the `dev` bot — and open PRs into `main`. A new bot instance needs its
+  Environment added to the deploy matrix.
 
 ## Agent skills
 

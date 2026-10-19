@@ -3,6 +3,8 @@ name: tgcloud
 on:
   push:
   pull_request:
+  # Deploy any branch to the dev bot by hand: Actions → tgcloud → Run workflow.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -26,17 +28,31 @@ jobs:
       - name: Build the Converter
         run: npm run build
 
-  # The rewrite branch deploys to the dev bot instance. Each bot instance is a GitHub
-  # Environment holding the same keys: secrets TGCLOUD_TOKEN and ADMIN_ID, variable
-  # REQUIRE_APPROVAL (ADR-0003). The Converter's URL is derived from the token.
+  # Every bot instance is a GitHub Environment holding the same keys: secrets
+  # TGCLOUD_TOKEN and ADMIN_ID, variable REQUIRE_APPROVAL (ADR-0003). The Converter's URL
+  # is derived from the token. Pushes to main deploy every production instance, one
+  # after the other, stopping at the first failure; pushes to claude/* branches and
+  # manual runs deploy the dev instance.
   deploy:
     needs: [check]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/claude/tgcloud-rewrite'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' &&
+       (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/claude/')))
+    strategy:
+      max-parallel: 1
+      fail-fast: true
+      matrix:
+        environment: >-
+          ${{ github.ref == 'refs/heads/main' && github.event_name == 'push'
+              && fromJSON('["prod-audiotinkoff_bot", "prod-privatebot"]')
+              || fromJSON('["dev"]') }}
     runs-on: ubuntu-latest
-    environment: dev
-    # One deploy at a time across all bot instances; queued ones wait, never cancel.
+    environment: ${{ matrix.environment }}
+    # One deploy at a time per bot instance; a running deploy is never cancelled (a newer
+    # queued one replaces an older queued one).
     concurrency:
-      group: tgcloud-deploy
+      group: tgcloud-deploy-${{ matrix.environment }}
       cancel-in-progress: false
     env:
       TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_TOKEN }}

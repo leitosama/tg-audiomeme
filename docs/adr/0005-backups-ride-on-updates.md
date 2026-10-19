@@ -13,7 +13,7 @@ only: the stored `file_id`s stay valid for the same bot, and meme media isn't co
 - **A scheduler**: tgcloud has none. Its handlers run only for Telegram updates and
   endpoints only for Mini App calls, and the Bot API can't wake a bot up.
 - **A scheduled GitHub Actions workflow running `tgcloud run`**: scheduled workflows run
-  only from the default branch (still the Python bot), and GitHub disables them in a
+  only from the default branch (still the Python bot when this was decided), and GitHub disables them in a
   public repository after 60 days without activity. Keeping one alive means either
   leaning on unrelated commits or a self-re-enabling trick, for little gain: the data
   changes only when updates arrive, and those trigger the backup anyway.

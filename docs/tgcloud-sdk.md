@@ -5,7 +5,7 @@ Telegram Bot API (`api`), HTTP (`fetch`), and `console` logging. The database is
 the largest surface, so it comes first; `api`, `fetch`, and `console` are at the
 end.
 
-> Orientation and project rules live in [../AGENTS.md](../AGENTS.md). This file is
+> Orientation and project rules live in [../CLAUDE.md](../CLAUDE.md). This file is
 > the API reference.
 
 ## `sdk` at a glance
@@ -28,7 +28,7 @@ import { fetch } from 'sdk/fetch'
 ## Rules that bite
 
 The runtime is not stock Node — these defaults don't hold. Detail is in the
-sections below; project rules are in [../AGENTS.md](../AGENTS.md).
+sections below; project rules are in [../CLAUDE.md](../CLAUDE.md).
 
 - **Import project modules by relative path with `.js`** — `from '../schema.js'`, `from '../lib/cart.js'` (a relative import without `.js` fails). The SDK is imported by name: `from 'sdk'`, `from 'sdk/db'`.
 - **Every DB call is async — always `await`.** `.all()`/`.get()`/`.values()`/`.run()`, `db.$count()`, and raw `db.run/all/get` all return Promises. A forgotten `await` returns the builder, not rows.
