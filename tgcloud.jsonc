@@ -1,0 +1,7 @@
+{
+  // The Converter (converter/), built by `npm run build`, is the bot's Mini App.
+  "static": {
+    "source": "dist"
+  },
+  "$schema": "./node_modules/@tgcloud/cli/schema/tgcloud.json"
+}

@@ -1,0 +1,87 @@
+name: tgcloud
+
+on:
+  push:
+  pull_request:
+  # Deploy any branch to the dev bot by hand: Actions → tgcloud → Run workflow.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Lint + format
+        run: npx biome ci .
+      - name: Typecheck
+        run: npx tsc && npx tsc -p converter
+      - name: Test
+        run: npx vitest run --coverage
+      - name: Build the Converter
+        run: npm run build
+
+  # Every bot instance is a GitHub Environment holding the same keys: secrets
+  # TGCLOUD_TOKEN and ADMIN_ID, variable REQUIRE_APPROVAL (ADR-0003). The Converter's URL
+  # is derived from the token. Pushes to main deploy every production instance, one
+  # after the other, stopping at the first failure; pushes to claude/* branches and
+  # manual runs deploy the dev instance.
+  deploy:
+    needs: [check]
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' &&
+       (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/claude/')))
+    strategy:
+      max-parallel: 1
+      fail-fast: true
+      matrix:
+        environment: >-
+          ${{ github.ref == 'refs/heads/main' && github.event_name == 'push'
+              && fromJSON('["prod-audiotinkoff_bot", "prod-privatebot"]')
+              || fromJSON('["dev"]') }}
+    runs-on: ubuntu-latest
+    environment: ${{ matrix.environment }}
+    # One deploy at a time per bot instance; a running deploy is never cancelled (a newer
+    # queued one replaces an older queued one).
+    concurrency:
+      group: tgcloud-deploy-${{ matrix.environment }}
+      cancel-in-progress: false
+    env:
+      TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_TOKEN }}
+      ADMIN_ID: ${{ secrets.ADMIN_ID }}
+      REQUIRE_APPROVAL: ${{ vars.REQUIRE_APPROVAL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Generate config
+        run: node scripts/gen-config.js
+      - name: Build the Converter
+        run: npm run build
+      # CI has no .tgcloud/ sync state, so the repo is the source of truth: --force
+      # replaces whatever is deployed (including modules deleted here).
+      - name: Push modules
+        run: node scripts/check-deploy.js && npx tgcloud push --force
+      - name: Apply safe schema changes
+        run: npx tgcloud migrate --safe
+      # `migrate --safe` exits 0 even when it skips warning/manual changes, so
+      # check for leftovers and fail with the dry-run output instead of hiding them.
+      - name: Fail on non-safe schema changes
+        run: |
+          out="$(npx tgcloud migrate --dry-run 2>&1)"
+          echo "$out"
+          if ! grep -q "No schema changes" <<<"$out"; then
+            echo "::error::Non-safe schema changes remain; review the dry-run above and apply them by hand."
+            exit 1
+          fi

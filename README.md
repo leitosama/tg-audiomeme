@@ -1,9 +1,9 @@
 # tg-audiomeme
 
-[![CI](https://github.com/leitosama/tg-audiomeme/actions/workflows/ci.yml/badge.svg)](https://github.com/leitosama/tg-audiomeme/actions/workflows/ci.yml)
-![Python](https://img.shields.io/badge/python-3.12%2B-blue)
+[![tgcloud](https://github.com/leitosama/tg-audiomeme/actions/workflows/tgcloud.yml/badge.svg)](https://github.com/leitosama/tg-audiomeme/actions/workflows/tgcloud.yml)
 
-A Telegram bot — like Stickers, but for audio and video messages.
+A Telegram bot — like Stickers, but for audio and video messages. It runs on Telegram's
+serverless platform, [tgcloud](docs/tgcloud-sdk.md): there is no server to operate.
 
 ## Features
 
@@ -11,9 +11,10 @@ A Telegram bot — like Stickers, but for audio and video messages.
 
 A single admin (`ADMIN_ID`) manages memes via direct messages to the bot:
 
-- **`/add`** — add an audio or video to the database:
-  - first forward/upload the media, then give it a **name** (any text) and an
-    optional **emoji**;
+- **`/add`** — add a meme:
+  - send a voice message or a video note, or tap **Converter** to turn any audio or
+    video file into one in the Mini App (see [The Converter](#the-converter)); then
+    give it a **name** (any text) and an optional **emoji**;
   - the bot stores the Telegram `file_id` for later reuse;
   - send `/cancel` (or tap **❌ Отмена**) at any step to abort, and `/skip` to
     leave the emoji empty.
@@ -22,6 +23,14 @@ A single admin (`ADMIN_ID`) manages memes via direct messages to the bot:
   Each meme shows its all-time send count. (`/delete` opens the same hub.)
 - **`/users`** — list users with their usage count and approve/revoke them via
   inline buttons (relevant when `REQUIRE_APPROVAL` is on).
+- **`/backup`** — get a backup of the memes and users now (see
+  [Backups and restore](#backups-and-restore)).
+
+> **Admin's privacy settings.** To store a converted audio or video file, the bot
+> sends it to the admin's chat as a voice message or video note. If the admin's
+> account restricts voice messages (Settings → Privacy and Security → Voice
+> Messages, a Telegram Premium option), add the bot under **Always Allow**.
+> Otherwise adding a file fails with `VOICE_MESSAGES_FORBIDDEN`.
 
 ### For everyone
 
@@ -42,78 +51,83 @@ Per-user and per-meme send counts are tracked whenever a meme is sent (powering 
 `chosen_inline_result` updates, so enable inline feedback for the bot in
 [@BotFather](https://t.me/BotFather) (`/setinlinefeedback`).
 
-## Quick start (Docker Compose)
+### Media health
 
-By default, `docker-compose.yml` pulls the prebuilt image from
-`ghcr.io/leitosama/tg-audiomeme:latest`.
+On activity the bot checks a few stored `file_id`s with `getFile`; a meme whose file
+fails twice in a row is hidden from inline results, marked in `/list` and reported to the
+admin ([ADR-0006](docs/adr/0006-keep-meme-media-alive.md)).
 
-```bash
-cp .env.example .env
-# fill in BOT_TOKEN and ADMIN_ID in .env
-docker compose up -d
-```
+## Bot instances
 
-To build the image locally instead of pulling it from the registry:
+The same code runs as several **bot instances**, each with its own token, admin and
+library. Each one is a GitHub Environment holding:
 
-```bash
-docker compose up -d --build
-```
+| Key                | Kind     | Description                                                           |
+| ------------------ | -------- | --------------------------------------------------------------------- |
+| `TGCLOUD_TOKEN`    | secret   | The bot's tgcloud token, `app<id>:<secret>`. Also gives the Converter's URL, `https://app<id>.tgcloud.ai/`. |
+| `ADMIN_ID`         | secret   | Telegram ID of the single admin.                                      |
+| `REQUIRE_APPROVAL` | variable | `true` or `false` (default): gate inline usage behind approval.       |
 
-The database is stored in the `./db` volume on the host.
+tgcloud has no runtime environment variables, so `scripts/gen-config.js` bakes these into
+the gitignored `tgcloud/lib/config.js` at deploy time
+([ADR-0003](docs/adr/0003-per-bot-config-from-github-environments.md)).
 
-## Environment variables
+| Environment             | Deployed by                                                 |
+| ----------------------- | ----------------------------------------------------------- |
+| `prod-audiotinkoff_bot` | every push to `main`                                        |
+| `prod-privatebot`       | every push to `main`, after `prod-audiotinkoff_bot` succeeds |
+| `dev`                   | pushes to `claude/*` branches, and Actions → tgcloud → Run workflow on any branch |
 
-| Variable     | Required | Default                | Description                                                     |
-| ------------ | -------- | ---------------------- | --------------------------------------------------------------- |
-| `BOT_TOKEN`  | yes      | —                      | Bot token from [@BotFather](https://t.me/BotFather).            |
-| `ADMIN_ID`   | yes      | —                      | Telegram ID of the single admin.                                |
-| `DB_PATH`    | no       | `./db/audio_meme.db`   | Path to the SQLite file.                                        |
-| `TG_API_URL` | no       | —                      | Custom Bot API endpoint (e.g. a self-hosted Bot API server).    |
-| `REQUIRE_APPROVAL` | no | `false`                | Gate inline usage behind admin approval (see above).            |
-
-See [`.env.example`](.env.example) for a template.
+To add a bot instance: create a `prod-<bot username>` Environment with the keys above, add
+it to the `deploy` job's matrix in [`.github/workflows/tgcloud.yml`](.github/workflows/tgcloud.yml),
+and in @BotFather turn on inline mode (`/setinline`) and inline feedback
+(`/setinlinefeedback`).
 
 ## Local development
 
-Requires Python 3.12+.
+Requires Node.js 24.
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements-dev.txt
+npm ci
+cp .env.example .env    # fill in ADMIN_ID (and TGCLOUD_TOKEN for the Converter button)
+npm run config          # writes tgcloud/lib/config.js from .env
+npm run check           # Biome, tsc, Vitest with coverage, the Converter build — what CI runs
 ```
 
-Run the bot (variables can be passed inline):
+`npx tgcloud login` links the project to a bot (use the dev bot), or set `TGCLOUD_TOKEN`
+in the shell, which takes priority. Then:
 
 ```bash
-BOT_TOKEN=... ADMIN_ID=... python main.py
+npx tgcloud status                       # what changed locally vs the cloud
+npx tgcloud run handlers/message '{ … }'  # run a module in the cloud without deploying
+npm run deploy                           # build the Converter and push to the linked bot
 ```
 
-Quality checks (the same ones CI runs):
-
-```bash
-ruff check .            # linter
-ruff format --check .   # formatting
-mypy main.py            # types (strict, configured in pyproject.toml)
-pytest                  # tests + coverage
-```
+Prefer deploying through CI: it regenerates the config from the Environment and applies
+safe schema changes. Pushing by hand deploys whatever `tgcloud/lib/config.js` holds.
 
 ## CI/CD
 
-GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
+GitHub Actions ([`.github/workflows/tgcloud.yml`](.github/workflows/tgcloud.yml)):
 
-- **On every push and pull request**, a single `check` job runs `ruff` (lint + format),
-  `mypy` (strict), and `pytest` (with coverage).
-- **On push to `main`**, after all checks pass, a multi-platform Docker image
-  (`linux/amd64`, `linux/arm64`) is built and published to
-  `ghcr.io/leitosama/tg-audiomeme` with the tags `latest` and `sha-<commit>`.
+- **On every push and pull request**, the `check` job runs Biome, `tsc`, Vitest with
+  coverage and the Converter build.
+- **Deploys** (see [Bot instances](#bot-instances)) generate the config, build the
+  Converter, `tgcloud push --force`, apply safe schema changes with `tgcloud migrate --safe`,
+  and fail if anything non-safe is left for a human to apply.
 
-`main` is production: there is no separate staging environment and no release
-versioning — working code ships straight to `main`.
+`main` is production: there is no staging and no release versioning. Work in `claude/*`
+branches (which deploy to the dev bot) and open PRs into `main`.
+
+## The Converter
+
+A Mini App, opened from `/add`, that turns any audio or video file into a voice message or
+a video note in the admin's browser (WebCodecs via mediabunny,
+[ADR-0004](docs/adr/0004-convert-in-the-admins-browser.md)). Its sources are in
+`converter/`; `npm run build` writes it to `dist/`, which `tgcloud.jsonc` deploys next to
+the bot at `https://app<id>.tgcloud.ai/`.
 
 ## Database
-
-All memes are stored in SQLite (`./db/audio_meme.db` by default).
 
 The `memes` table:
 
@@ -132,6 +146,77 @@ The `users` table:
 - `approved` — whether the user may send memes (only enforced when
   `REQUIRE_APPROVAL` is on);
 - `count` — number of memes the user has sent.
+
+Schema changes go in `tgcloud/schema.js`; deploying never touches the database, the
+migrate step does.
+
+## Backups and restore
+
+On tgcloud the database can't be reached directly, so the bot sends its admin backups:
+JSON documents holding the `memes` and `users` tables (the rows described above, with
+SQLite column names). Meme media isn't included: the stored `file_id`s keep working as
+long as the bot (its token) is the same.
+
+- **Automatically**, silently, after any update to the bot, at most once a day and only
+  if the data changed since the last backup sent. A failed send is retried an hour later.
+- **On demand** with `/backup`, which always sends one and restarts the daily timer.
+
+Backups pile up in the chat; the newest one is the current state. Backups hold user IDs
+and names: keep them off git, issues, CI and chats other than the admin's, and delete
+local copies once they're restored.
+
+To restore one, give each bot instance a local env file (gitignored, like every
+`.env.*` but `.env.example`) holding its `TGCLOUD_TOKEN` and `ADMIN_ID`, for example
+`.env.prod-privatebot`, and run:
+
+```bash
+npm run restore -- .env.prod-privatebot backup-2026-10-19-1530.json
+# The library isn't empty? Delete every meme and user first, then restore:
+npm run restore -- .env.prod-privatebot backup-2026-10-19-1530.json --clear
+```
+
+[`scripts/restore.js`](scripts/restore.js):
+
+- takes the target bot only from the env file (never from your shell or `tgcloud login`)
+  and asks you to type its app id before changing anything;
+- copies the never-deployed endpoints in [`scripts/tgcloud/endpoints/`](scripts/tgcloud/endpoints)
+  into `tgcloud/endpoints/` and runs them as the admin (`--ctx`) with `tgcloud run`, which
+  executes local code in the cloud without deploying it;
+- leaves out the line where `tgcloud run` echoes its argument, the whole backup;
+- always deletes the copies afterwards, and puts `tgcloud/lib/config.js` back as it was.
+
+The restore checks the whole file first and refuses unless both tables are empty. It
+isn't atomic: if it fails part-way, run it again with `--clear`. Should a copy of
+`restore` or `clear_library` ever be left behind, it's gitignored, `npm run deploy` and
+CI refuse to push it, and the endpoints refuse every caller but the admin.
+
+`restore` also accepts a Python bot instance's tables exported with `sqlite3 -json`,
+which is how an instance moved to tgcloud. On the old server, with the bot stopped:
+
+```bash
+memes=$(sqlite3 -json db/audio_meme.db 'SELECT * FROM memes')
+users=$(sqlite3 -json db/audio_meme.db 'SELECT * FROM users')
+# sqlite3 prints nothing for an empty table, hence the [] fallbacks.
+printf '{ "memes": %s, "users": %s }\n' "${memes:-[]}" "${users:-[]}" > backup-python.json
+chmod 600 backup-python.json   # then copy it to your machine with scp
+```
+
+The file travels as one command-line argument; macOS allows about 1 MB, enough for
+thousands of memes. `backup*.json` is gitignored.
+
+## Rolling back to the Python bot
+
+The Python implementation (telebot, long-polling, Docker image on GHCR) is preserved on
+the [`python`](https://github.com/leitosama/tg-audiomeme/tree/python) branch. For one bot
+instance:
+
+1. Delete the webhook tgcloud set, or long-polling can't start:
+   `curl "https://api.telegram.org/bot<BOT_TOKEN>/deleteWebhook"`.
+2. On the server, check out `python` and run `docker compose up -d` against the bot's
+   old `db/audio_meme.db`.
+
+Anything sent, added or changed on tgcloud since the move is lost, unless it's re-added
+by hand.
 
 ## License
 
