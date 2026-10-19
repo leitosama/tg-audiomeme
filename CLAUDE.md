@@ -97,7 +97,7 @@ the fake Bot API's calls. No real Telegram or tgcloud calls.
 - Biome (2-space, single quotes, line width 100) and `tsc --strict` on JSDoc are mandatory.
 - When adding a config key: `scripts/gen-config.js` (+ its test), `lib/config.d.ts`,
   `tests/fakes/config.js`, `.env.example`, every GitHub Environment, the workflow's `env`,
-  and the README's "Bot instances" table.
+  and the README's "Configuration" table.
 - **`main` is production**: a push that touches a deployed input (the `push.paths` filter
   in `.github/workflows/tgcloud.yml`) deploys each `prod-<bot username>` Environment in
   turn; docs/tests-only pushes don't. Work in `claude/*` branches — such pushes to them
