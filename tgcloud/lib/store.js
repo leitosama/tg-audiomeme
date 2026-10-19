@@ -4,7 +4,14 @@
 
 import { db } from 'sdk';
 import { asc, desc, eq, gt, sql } from 'sdk/db';
-import { backupState, conversationSteps, memes, sentMessages, users } from '../schema.js';
+import {
+  backupState,
+  conversationSteps,
+  mediaCheckState,
+  memes,
+  sentMessages,
+  users,
+} from '../schema.js';
 
 /**
  * @typedef {object} Meme
@@ -14,6 +21,8 @@ import { backupState, conversationSteps, memes, sentMessages, users } from '../s
  * @property {'audio' | 'video'} mediaType
  * @property {string} emoji
  * @property {number} count
+ * @property {number} [checkedAt] when the media check last checked its file ID (epoch ms)
+ * @property {number} [failedChecks] media checks in a row that couldn't find its file
  */
 
 /**
@@ -413,4 +422,63 @@ export async function getBackupHash() {
 export async function setBackupHash(hash) {
   await ensureBackupState();
   await db.update(backupState).set({ hash }).where(eq(backupState.id, 1)).run();
+}
+
+// --- Media check (ADR-0006) ---
+
+/** Makes sure the single media_check_state row exists; a new one is due at once. */
+async function ensureMediaCheckState() {
+  await db
+    .insert(mediaCheckState)
+    .values({ id: 1, nextAt: 0 })
+    .onConflictDoNothing({ target: mediaCheckState.id })
+    .run();
+}
+
+/**
+ * Claims the media check if it's due (`next_at <= now`), pushing it to `nextAt`. One
+ * conditional UPDATE, so of two updates racing only one wins.
+ * @param {number} now epoch ms
+ * @param {number} nextAt epoch ms
+ * @returns {Promise<boolean>} whether this caller claimed the check
+ */
+export async function claimMediaCheck(now, nextAt) {
+  await ensureMediaCheckState();
+  const result = await db.run(
+    sql`UPDATE media_check_state SET next_at = ${nextAt} WHERE id = 1 AND next_at <= ${now}`,
+  );
+  return result.rowsAffected === 1;
+}
+
+/**
+ * Sets when the next media check may run.
+ * @param {number} nextAt epoch ms
+ */
+export async function setMediaCheckNextAt(nextAt) {
+  await ensureMediaCheckState();
+  await db.update(mediaCheckState).set({ nextAt }).where(eq(mediaCheckState.id, 1)).run();
+}
+
+/**
+ * The memes checked longest ago (never-checked first), ties by ID.
+ * @param {number} limit
+ * @returns {Promise<Meme[]>}
+ */
+export async function memesDueForCheck(limit) {
+  return await db
+    .select()
+    .from(memes)
+    .orderBy(asc(memes.checkedAt), asc(memes.id))
+    .limit(limit)
+    .all();
+}
+
+/**
+ * Records a media check of the meme's file ID.
+ * @param {number} id
+ * @param {number} checkedAt epoch ms
+ * @param {number} failedChecks checks in a row that couldn't find the file; 0 after a success
+ */
+export async function setMemeCheck(id, checkedAt, failedChecks) {
+  await db.update(memes).set({ checkedAt, failedChecks }).where(eq(memes.id, id)).run();
 }

@@ -88,7 +88,9 @@ called as plain functions; assert on the mock bot's calls. No real Telegram API 
   Its CI (`.github/workflows/tgcloud.yml`) deploys pushes to the rewrite branch to the
   `dev` GitHub Environment. Feature PRs target `claude/tgcloud-rewrite`. Backups
   (`tgcloud/lib/backup.js`, ADR-0005) ride on every update via the `checkingBackup`
-  handler wrapper; restoring uses the never-deployed `scripts/tgcloud/endpoints/`
+  handler wrapper, and so does the media check (`tgcloud/lib/media_check.js`, ADR-0006,
+  `checkingMedia`), which calls `getFile` on a few memes per update and hides broken ones
+  from inline results; restoring uses the never-deployed `scripts/tgcloud/endpoints/`
   (`restore.js`, `clear_library.js`), which the operator copies into `tgcloud/endpoints/`
   for one `tgcloud run`.
 

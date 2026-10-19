@@ -6,6 +6,7 @@
 
 import { api } from 'sdk';
 import { admitAdmin, answerTap, editableMenu, showView } from './callbacks.js';
+import { isBroken } from './media_check.js';
 import {
   CANCEL_KEYBOARD,
   emojiOf,
@@ -58,15 +59,21 @@ async function listView() {
   return {
     text: '📋 Мемы (нажми для управления):',
     reply_markup: {
-      inline_keyboard: memes.map((m) => [button(labelOf(m), 'show', m.id)]),
+      inline_keyboard: memes.map((m) => [
+        button(`${isBroken(m) ? '⚠️ ' : ''}${labelOf(m)}`, 'show', m.id),
+      ]),
     },
   };
 }
 
+const BROKEN_NOTE = '\n⚠️ Telegram не отдаёт файл, мем скрыт из inline-поиска';
+
 /** @param {Meme} meme @returns {View} */
 function detailView(meme) {
   return {
-    text: `${labelOf(meme)}\nТип: ${meme.mediaType}\nОтправок: ${meme.count}`,
+    text:
+      `${labelOf(meme)}\nТип: ${meme.mediaType}\nОтправок: ${meme.count}` +
+      (isBroken(meme) ? BROKEN_NOTE : ''),
     reply_markup: {
       inline_keyboard: [
         [button('✏️ Переименовать', 'rename', meme.id), button('😀 Эмодзи', 'emoji', meme.id)],

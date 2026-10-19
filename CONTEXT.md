@@ -31,6 +31,15 @@ The admin's Mini App that turns an arbitrary audio or video file into a meme's v
 message or video note while adding a meme.
 _Avoid_: Mini App, web app, uploader
 
+**Meme media**:
+The voice message or video note a meme sends, kept by Telegram rather than by the bot.
+_Avoid_: notes, file, audio
+
+**Broken meme**:
+A meme whose media Telegram no longer serves; it isn't offered in inline mode until
+Telegram serves it again or the admin replaces the meme.
+_Avoid_: dead meme, missing meme
+
 **Backup**:
 A copy of a bot instance's memes and users, sent to its admin as a file, from which
 they can be restored.

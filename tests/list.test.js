@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 import handleCallbackQuery from '../tgcloud/handlers/callback_query.js';
 import handleMessage from '../tgcloud/handlers/message.js';
+import { MEDIA_BROKEN_AFTER } from '../tgcloud/lib/media_check.js';
 import { apiCalls, BotApiError, callsTo, stubApi } from './fakes/sdk.js';
 import { tables } from './fakes/store.js';
 import { ADMIN_ID, callbackQuery, HUB_MESSAGE_ID, textMessage, USER_ID } from './payloads.js';
@@ -110,6 +111,19 @@ describe('meme detail view', () => {
     expect(callsTo('sendVideoNote')).toEqual([{ chat_id: ADMIN_ID, video_note: 'vn-fid' }]);
     expect(callsTo('sendVoice')).toEqual([]);
     expect(editedHub().text).toBe('🎬 Тишина\nТип: video\nОтправок: 0');
+  });
+
+  test('a broken meme is flagged in the list and its detail view', async () => {
+    const id = seedMeme({ name: 'Bruh', failedChecks: MEDIA_BROKEN_AFTER });
+
+    await handleMessage(textMessage('/list', { from: ADMIN_ID }));
+    await tap(`meme:show:${id}`);
+
+    const [list] = callsTo('sendMessage');
+    expect(buttonsOf(list.reply_markup)).toEqual([['⚠️ 🎵 Bruh', `meme:show:${id}`]]);
+    expect(editedHub().text).toBe(
+      '🎵 Bruh\nТип: audio\nОтправок: 0\n⚠️ Telegram не отдаёт файл, мем скрыт из inline-поиска',
+    );
   });
 
   test('a failed preview still opens the detail view', async () => {

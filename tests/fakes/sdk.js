@@ -11,6 +11,7 @@ const results = {};
 
 /**
  * Makes `method` resolve to `result` (or reject, if it's an Error) until the next reset.
+ * A function `result` is called with each call's params and gives that call's result.
  * @param {string} method
  * @param {unknown} result
  */
@@ -78,7 +79,8 @@ export const api = new Proxy(
       /** @param {Record<string, any>} [params] */
       return async (params = {}) => {
         apiCalls.push({ method, params });
-        const result = results[method] ?? true;
+        const stub = results[method] ?? true;
+        const result = typeof stub === 'function' ? stub(params) : stub;
         if (result instanceof Error) throw result;
         return result;
       };

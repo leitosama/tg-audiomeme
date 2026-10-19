@@ -21,6 +21,7 @@ export function resetStore() {
   sentMessages.clear();
   backupState.nextAt = Number.MAX_SAFE_INTEGER;
   backupState.hash = null;
+  mediaCheckState.nextAt = Number.MAX_SAFE_INTEGER;
 }
 
 // --- Conversation steps and adding memes (/add, issue #14) ---
@@ -315,4 +316,50 @@ export async function getBackupHash() {
 /** @param {string} hash */
 export async function setBackupHash(hash) {
   backupState.hash = hash;
+}
+
+// --- Media check (ADR-0006) ---
+
+/**
+ * The media_check_state row. `resetStore` makes the check not due, so handler tests make
+ * no getFile calls; media check tests set `nextAt` themselves.
+ */
+export const mediaCheckState = { nextAt: Number.MAX_SAFE_INTEGER };
+
+/**
+ * @param {number} now
+ * @param {number} nextAt
+ * @returns {Promise<boolean>}
+ */
+export async function claimMediaCheck(now, nextAt) {
+  if (mediaCheckState.nextAt > now) return false;
+  mediaCheckState.nextAt = nextAt;
+  return true;
+}
+
+/** @param {number} nextAt */
+export async function setMediaCheckNextAt(nextAt) {
+  mediaCheckState.nextAt = nextAt;
+}
+
+/**
+ * Same order as the real `memesDueForCheck`: checked longest ago (never first), then ID.
+ * @param {number} limit
+ * @returns {Promise<Meme[]>}
+ */
+export async function memesDueForCheck(limit) {
+  return [...tables.memes]
+    .sort((a, b) => (a.checkedAt ?? 0) - (b.checkedAt ?? 0) || a.id - b.id)
+    .slice(0, limit)
+    .map((m) => ({ ...m }));
+}
+
+/**
+ * @param {number} id
+ * @param {number} checkedAt
+ * @param {number} failedChecks
+ */
+export async function setMemeCheck(id, checkedAt, failedChecks) {
+  const meme = tables.memes.find((m) => m.id === id);
+  if (meme) Object.assign(meme, { checkedAt, failedChecks });
 }

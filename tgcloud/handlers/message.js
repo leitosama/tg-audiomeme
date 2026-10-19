@@ -9,6 +9,7 @@ import { checkingBackup, startBackup } from '../lib/backup.js';
 import { loggingBotApiFailures } from '../lib/bot_api.js';
 import { commandOf, isAdminPrivate } from '../lib/commands.js';
 import { continueEdit, startList } from '../lib/list.js';
+import { checkingMedia } from '../lib/media_check.js';
 import { CANCEL_TEXT, cancelStep, stepTakesCommand } from '../lib/meme_input.js';
 import { startReply } from '../lib/start.js';
 import { clearStep, getStep } from '../lib/store.js';
@@ -16,7 +17,9 @@ import { startUsers } from '../lib/users.js';
 
 /** @typedef {import('@grammyjs/types').Message} Message */
 
-export default checkingBackup(loggingBotApiFailures('handlers/message', handleMessage));
+export default checkingBackup(
+  checkingMedia(loggingBotApiFailures('handlers/message', handleMessage)),
+);
 
 /** @param {Message} message */
 async function handleMessage(message) {

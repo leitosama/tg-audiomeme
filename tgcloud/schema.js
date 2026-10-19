@@ -14,6 +14,10 @@ export const memes = table(
     emoji: text('emoji').notNull().default(''),
     count: integer('count').notNull().default(0),
     createdAt: text('created_at').default(sql`(CURRENT_TIMESTAMP)`),
+    // The media check (ADR-0006): when the file ID was last checked (epoch ms, 0 = never)
+    // and how many checks in a row Telegram couldn't find the file.
+    checkedAt: integer('checked_at').notNull().default(0),
+    failedChecks: integer('failed_checks').notNull().default(0),
   },
   (t) => ({
     mediaTypeCheck: check('memes_media_type', sql`${t.mediaType} in ('audio', 'video')`),
@@ -57,4 +61,10 @@ export const backupState = table('backup_state', {
   id: integer('id').primaryKey(),
   nextAt: integer('next_at').notNull(),
   hash: text('hash'),
+});
+
+// When the next media check may run (`next_at`, epoch ms; ADR-0006). One row, id 1.
+export const mediaCheckState = table('media_check_state', {
+  id: integer('id').primaryKey(),
+  nextAt: integer('next_at').notNull(),
 });

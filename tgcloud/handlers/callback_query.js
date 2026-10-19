@@ -5,12 +5,13 @@ import { checkingBackup } from '../lib/backup.js';
 import { loggingBotApiFailures } from '../lib/bot_api.js';
 import { answerTap } from '../lib/callbacks.js';
 import { handleMemeAction, MEME_CALLBACK_PREFIX } from '../lib/list.js';
+import { checkingMedia } from '../lib/media_check.js';
 import { handleUserAction, USER_CALLBACK_PREFIX } from '../lib/users.js';
 
 /** @typedef {import('@grammyjs/types').CallbackQuery} CallbackQuery */
 
 export default checkingBackup(
-  loggingBotApiFailures('handlers/callback_query', handleCallbackQuery),
+  checkingMedia(loggingBotApiFailures('handlers/callback_query', handleCallbackQuery)),
 );
 
 /** @param {CallbackQuery} query */

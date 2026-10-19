@@ -1,13 +1,14 @@
 // handlers/inline_query — runs on each `inline_query` update (`@bot <text>` in any
 // chat): offers the library's memes as cached voice / video results to send, or a
 // leaderboard for the reserved queries `stats` / `userstats`. With approval mode on,
-// only approved users get either.
+// only approved users get either. Broken memes (ADR-0006) aren't offered.
 
 import { api } from 'sdk';
 import { checkingBackup } from '../lib/backup.js';
 import { loggingBotApiFailures } from '../lib/bot_api.js';
 import { REQUIRE_APPROVAL } from '../lib/config.js';
 import { leaderboardArticle } from '../lib/leaderboard.js';
+import { checkingMedia, isBroken } from '../lib/media_check.js';
 import { titleOf } from '../lib/meme_title.js';
 import { isUserApproved, registerUser, searchMemes, topMemes, topUsers } from '../lib/store.js';
 
@@ -29,7 +30,9 @@ const PENDING_RESULT = {
   input_message_content: { message_text: PENDING_TEXT },
 };
 
-export default checkingBackup(loggingBotApiFailures('handlers/inline_query', handleInlineQuery));
+export default checkingBackup(
+  checkingMedia(loggingBotApiFailures('handlers/inline_query', handleInlineQuery)),
+);
 
 /** @param {InlineQuery} inlineQuery */
 async function handleInlineQuery(inlineQuery) {
@@ -43,7 +46,7 @@ async function handleInlineQuery(inlineQuery) {
     await answer(inlineQuery, { results: [leaderboard], cache_time: 0 });
     return;
   }
-  const found = await searchMemes(inlineQuery.query);
+  const found = (await searchMemes(inlineQuery.query)).filter((m) => !isBroken(m));
   const offset = Number.parseInt(inlineQuery.offset, 10) || 0;
   const end = offset + PAGE_SIZE;
   await answer(inlineQuery, {

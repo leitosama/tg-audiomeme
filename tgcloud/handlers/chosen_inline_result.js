@@ -3,6 +3,7 @@
 
 import { checkingBackup } from '../lib/backup.js';
 import { loggingBotApiFailures } from '../lib/bot_api.js';
+import { checkingMedia } from '../lib/media_check.js';
 import {
   getMeme,
   incrementMemeCount,
@@ -17,7 +18,9 @@ const SEEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /** @typedef {import('@grammyjs/types').ChosenInlineResult} ChosenInlineResult */
 /** @typedef {import('@grammyjs/types').Update} Update */
 
-export default checkingBackup(loggingBotApiFailures('handlers/chosen_inline_result', countSend));
+export default checkingBackup(
+  checkingMedia(loggingBotApiFailures('handlers/chosen_inline_result', countSend)),
+);
 
 /**
  * @param {ChosenInlineResult} chosen
