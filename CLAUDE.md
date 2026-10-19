@@ -20,7 +20,8 @@ npm run format          # biome check --write
 npx vitest run tests/list.test.js        # one file; -t '<name>' for one test
 npx tgcloud status      # local vs cloud
 npx tgcloud run <module> '<json5 args>' [--ctx '<json5>']   # run local code in the cloud, no deploy
-npm run deploy          # vite build && tgcloud push, to the bot linked locally
+npm run deploy          # guard, vite build && tgcloud push, to the bot linked locally
+npm run restore -- <env file> <backup.json> [--clear]   # restore a backup into one bot
 ```
 `tgcloud login` links the project to a bot; `TGCLOUD_TOKEN` in the environment takes
 priority over it. Coverage thresholds are 80% (`vitest.config.js`).
@@ -34,7 +35,7 @@ priority over it. Coverage thresholds are 80% (`vitest.config.js`).
 | `tgcloud/endpoints/`   | Functions the Mini App calls (`POST /api/<name>`), one level only. Only `addConvertedMedia`. |
 | `converter/`           | The Converter Mini App (Vite + mediabunny, ADR-0004); pure decisions in `converter/plan.js`. Built to `dist/`, which `tgcloud.jsonc` deploys. |
 | `scripts/gen-config.js`| Generates `tgcloud/lib/config.js` (`ADMIN_ID`, `REQUIRE_APPROVAL`, `CONVERTER_URL` derived from `TGCLOUD_TOKEN`). |
-| `scripts/tgcloud/`     | Never-deployed modules mirroring `tgcloud/` (`endpoints/restore.js`, `endpoints/clear_library.js`); the operator copies them into `tgcloud/endpoints/` for one `tgcloud run`. |
+| `scripts/tgcloud/`     | Never-deployed, admin-only modules mirroring `tgcloud/` (`endpoints/restore.js`, `endpoints/clear_library.js`). `npm run restore` (`scripts/restore.js`) copies them into `tgcloud/endpoints/` for one `tgcloud run` and deletes them; `scripts/check-deploy.js` refuses to push while a copy exists. |
 | `tests/`, `types/`     | Vitest tests with fakes; ambient types for the SDK and runtime. |
 | `docs/tgcloud-sdk.md`  | Full SDK reference (db, Bot API, fetch, endpoints). |
 | `.tgcloud/`            | CLI state. **Never edit or read from here**; gitignored. |

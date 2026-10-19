@@ -161,30 +161,44 @@ long as the bot (its token) is the same.
   if the data changed since the last backup sent. A failed send is retried an hour later.
 - **On demand** with `/backup`, which always sends one and restarts the daily timer.
 
-Backups pile up in the chat; the newest one is the current state. To restore one,
-copy the never-deployed scripts in [`scripts/tgcloud/endpoints/`](scripts/tgcloud/endpoints)
-next to the bot's code, run them against the bot instance, then delete the copies.
-`tgcloud run` executes the local code in the cloud without deploying it, so nothing
-needs pushing:
+Backups pile up in the chat; the newest one is the current state. Backups hold user IDs
+and names: keep them off git, issues, CI and chats other than the admin's, and delete
+local copies once they're restored.
+
+To restore one, give each bot instance a local env file (gitignored, like every
+`.env.*` but `.env.example`) holding its `TGCLOUD_TOKEN` and `ADMIN_ID`, for example
+`.env.prod-privatebot`, and run:
 
 ```bash
-export TGCLOUD_TOKEN='app<id>:<secret>'   # the target bot instance's token
-cp scripts/tgcloud/endpoints/{clear_library,restore}.js tgcloud/endpoints/
-# Only if the library isn't empty: delete every meme and user (needs this exact text).
-npx tgcloud run endpoints/clear_library '{ confirm: "delete memes and users" }'
-# Restore: checks the whole file first, then refuses unless both tables are empty.
-npx tgcloud run endpoints/restore "$(cat backup-2026-10-19-1530.json)"
-rm tgcloud/endpoints/{clear_library,restore}.js
+npm run restore -- .env.prod-privatebot backup-2026-10-19-1530.json
+# The library isn't empty? Delete every meme and user first, then restore:
+npm run restore -- .env.prod-privatebot backup-2026-10-19-1530.json --clear
 ```
 
+[`scripts/restore.js`](scripts/restore.js):
+
+- takes the target bot only from the env file (never from your shell or `tgcloud login`)
+  and asks you to type its app id before changing anything;
+- copies the never-deployed endpoints in [`scripts/tgcloud/endpoints/`](scripts/tgcloud/endpoints)
+  into `tgcloud/endpoints/` and runs them as the admin (`--ctx`) with `tgcloud run`, which
+  executes local code in the cloud without deploying it;
+- leaves out the line where `tgcloud run` echoes its argument, the whole backup;
+- always deletes the copies afterwards, and puts `tgcloud/lib/config.js` back as it was.
+
+The restore checks the whole file first and refuses unless both tables are empty. It
+isn't atomic: if it fails part-way, run it again with `--clear`. Should a copy of
+`restore` or `clear_library` ever be left behind, it's gitignored, `npm run deploy` and
+CI refuse to push it, and the endpoints refuse every caller but the admin.
+
 `restore` also accepts a Python bot instance's tables exported with `sqlite3 -json`,
-which is how an instance moved to tgcloud:
+which is how an instance moved to tgcloud. On the old server, with the bot stopped:
 
 ```bash
 memes=$(sqlite3 -json db/audio_meme.db 'SELECT * FROM memes')
 users=$(sqlite3 -json db/audio_meme.db 'SELECT * FROM users')
 # sqlite3 prints nothing for an empty table, hence the [] fallbacks.
 printf '{ "memes": %s, "users": %s }\n' "${memes:-[]}" "${users:-[]}" > backup-python.json
+chmod 600 backup-python.json   # then copy it to your machine with scp
 ```
 
 The file travels as one command-line argument; macOS allows about 1 MB, enough for

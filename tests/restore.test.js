@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import clearLibrary from '../scripts/tgcloud/endpoints/clear_library.js';
 import restore from '../scripts/tgcloud/endpoints/restore.js';
+import { ADMIN_ID } from './fakes/config.js';
 import { addMeme, dumpMemesAndUsers, tables } from './fakes/store.js';
 
 /** A Python bot instance's data as `sqlite3 -json` prints its memes and users tables. */
@@ -33,8 +34,14 @@ function legacyExport() {
   };
 }
 
-/** Runs the restore the way `tgcloud run endpoints/restore "$(cat backup.json)"` does. */
-const run = (/** @type {unknown} */ input) => restore(input, {});
+/** The context `npm run restore` passes: the admin as the Mini App user. */
+const asAdmin = { initData: { user: { id: ADMIN_ID } } };
+
+/** Runs the restore the way `npm run restore -- backup.json` does. */
+const run = (/** @type {unknown} */ input) => restore(input, asAdmin);
+
+/** Contexts that aren't the admin: none (a bare `tgcloud run`), no user, someone else. */
+const notAdmin = [undefined, {}, { initData: {} }, { initData: { user: { id: ADMIN_ID + 1 } } }];
 
 describe('restore', () => {
   test('copies every meme and user field, keeping ids, counts and dates', async () => {
@@ -79,11 +86,17 @@ describe('restore', () => {
     const backup = JSON.parse(JSON.stringify(await dumpMemesAndUsers()));
     const before = structuredClone(tables);
 
-    await clearLibrary({ confirm: 'delete memes and users' }, {});
+    await clearLibrary({ confirm: 'delete memes and users' }, asAdmin);
     expect(await run(backup)).toEqual({ memes: 2, users: 2 });
 
     expect(tables).toEqual(before);
     expect(backup).toEqual(legacyExport());
+  });
+
+  test.each(notAdmin)('refuses anyone but the admin, restoring nothing (ctx %j)', async (ctx) => {
+    await expect(restore(legacyExport(), ctx)).rejects.toThrow(/Only the admin/);
+    expect(tables.memes).toEqual([]);
+    expect(tables.users).toEqual([]);
   });
 
   test('an instance with no users yet imports its memes', async () => {
@@ -154,7 +167,7 @@ describe('clear_library', () => {
   test('deletes every meme and user when confirmed', async () => {
     await run(legacyExport());
 
-    expect(await clearLibrary({ confirm: 'delete memes and users' }, {})).toEqual({
+    expect(await clearLibrary({ confirm: 'delete memes and users' }, asAdmin)).toEqual({
       memes: 2,
       users: 2,
     });
@@ -167,9 +180,19 @@ describe('clear_library', () => {
     async (input) => {
       await run(legacyExport());
 
-      await expect(clearLibrary(input, {})).rejects.toThrow(/Nothing was deleted/);
+      await expect(clearLibrary(input, asAdmin)).rejects.toThrow(/Nothing was deleted/);
       expect(tables.memes).toHaveLength(2);
       expect(tables.users).toHaveLength(2);
     },
   );
+
+  test.each(notAdmin)('refuses anyone but the admin, deleting nothing (ctx %j)', async (ctx) => {
+    await run(legacyExport());
+
+    await expect(clearLibrary({ confirm: 'delete memes and users' }, ctx)).rejects.toThrow(
+      /Only the admin/,
+    );
+    expect(tables.memes).toHaveLength(2);
+    expect(tables.users).toHaveLength(2);
+  });
 });

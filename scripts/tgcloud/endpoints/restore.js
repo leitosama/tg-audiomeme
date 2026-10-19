@@ -1,11 +1,10 @@
 // Restores a bot instance's memes and users into its tgcloud database from a backup the
 // bot sent to its admin, or from a Python bot instance's `sqlite3 -json` export of the
 // two tables (issue #21): both are `{ "memes": [...], "users": [...] }` with SQLite column
-// names. Never deployed: the operator copies this file to tgcloud/endpoints/restore.js,
-// runs it once with
-//   npx tgcloud run endpoints/restore "$(cat backup.json)"
-// then deletes the copy. Its imports are written for that location. README "Backups and
-// restore" has the whole runbook.
+// names. Never deployed: `npm run restore` (scripts/restore.js) copies this file to
+// tgcloud/endpoints/restore.js, runs it once as the admin, then deletes the copy. Its
+// imports are written for that location. README "Backups and restore" has the runbook.
+// Should a copy ever get deployed, it refuses everyone but the admin.
 //
 // The whole file is checked before anything is written, and the restore refuses to run
 // unless both tables are empty, so a bad file or a second run changes nothing; empty
@@ -15,6 +14,7 @@
 // clear_library.js and then the restore again.
 
 import { EndpointError } from 'sdk';
+import { ADMIN_ID } from '../lib/config.js';
 import { countMemesAndUsers, insertRows } from '../lib/store.js';
 
 /** @typedef {import('../lib/store.js').RestoredMeme} RestoredMeme */
@@ -97,10 +97,14 @@ function requireUnique(list, key, prop, column) {
 
 /**
  * @param {unknown} input `{ memes, users }`: a backup or `sqlite3 -json` export of the two tables
- * @param {unknown} _ctx
+ * @param {{ initData?: { user?: { id: number } } } | undefined} ctx the admin, passed by
+ *   `npm run restore` as `--ctx`
  * @returns {Promise<{ memes: number, users: number }>} how many rows were restored
  */
-export default async function restore(input, _ctx) {
+export default async function restore(input, ctx) {
+  if (ctx?.initData?.user?.id !== ADMIN_ID) {
+    throw new EndpointError('Only the admin may restore a backup. Nothing was restored.');
+  }
   if (!isObject(input)) reject('the backup must be an object { "memes": [...], "users": [...] }');
 
   /** @type {RestoredMeme[]} */

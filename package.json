@@ -20,9 +20,10 @@
     "test": "vitest run --coverage",
     "build": "vite build",
     "check": "biome ci . && tsc && tsc -p converter && vitest run --coverage && vite build",
-    "deploy": "vite build && tgcloud push",
+    "deploy": "node scripts/check-deploy.js && vite build && tgcloud push",
     "status": "tgcloud status",
-    "run": "tgcloud run"
+    "run": "tgcloud run",
+    "restore": "node scripts/restore.js"
   },
   "type": "module"
 }

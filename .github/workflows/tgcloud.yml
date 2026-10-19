@@ -72,7 +72,7 @@ jobs:
       # CI has no .tgcloud/ sync state, so the repo is the source of truth: --force
       # replaces whatever is deployed (including modules deleted here).
       - name: Push modules
-        run: npx tgcloud push --force
+        run: node scripts/check-deploy.js && npx tgcloud push --force
       - name: Apply safe schema changes
         run: npx tgcloud migrate --safe
       # `migrate --safe` exits 0 even when it skips warning/manual changes, so

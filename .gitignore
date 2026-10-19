@@ -1,7 +1,13 @@
-# Local config and tgcloud CLI state
+# Local config (one env file per bot instance for `npm run restore`) and CLI state
 .env
+.env.*
+!.env.example
 .tgcloud/
 tgcloud/lib/config.js
+
+# Never-deployed operator endpoints, copied in by `npm run restore` for one run
+tgcloud/endpoints/restore.js
+tgcloud/endpoints/clear_library.js
 
 # Dependencies, build and coverage output
 node_modules/
