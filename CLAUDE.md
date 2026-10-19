@@ -98,10 +98,11 @@ the fake Bot API's calls. No real Telegram or tgcloud calls.
 - When adding a config key: `scripts/gen-config.js` (+ its test), `lib/config.d.ts`,
   `tests/fakes/config.js`, `.env.example`, every GitHub Environment, the workflow's `env`,
   and the README's "Bot instances" table.
-- **`main` is production**: every push deploys each `prod-<bot username>` Environment in
-  turn (`.github/workflows/tgcloud.yml`). Work in `claude/*` branches — pushes to them
-  deploy the `dev` bot — and open PRs into `main`. A new bot instance needs its
-  Environment added to the deploy matrix.
+- **`main` is production**: a push that touches a deployed input (the `push.paths` filter
+  in `.github/workflows/tgcloud.yml`) deploys each `prod-<bot username>` Environment in
+  turn; docs/tests-only pushes don't. Work in `claude/*` branches — such pushes to them
+  deploy the `dev` bot — and open PRs into `main`. If you add a file the deploy reads,
+  add it to `paths`. A new bot instance needs its Environment added to the deploy matrix.
 
 ## Agent skills
 

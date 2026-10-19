@@ -74,9 +74,16 @@ the gitignored `tgcloud/lib/config.js` at deploy time
 
 | Environment             | Deployed by                                                 |
 | ----------------------- | ----------------------------------------------------------- |
-| `prod-audiotinkoff_bot` | every push to `main`                                        |
-| `prod-privatebot`       | every push to `main`, after `prod-audiotinkoff_bot` succeeds |
-| `dev`                   | pushes to `claude/*` branches, and Actions → tgcloud → Run workflow on any branch |
+| `prod-audiotinkoff_bot` | deployable pushes to `main`; Run workflow on `main` → `production` |
+| `prod-privatebot`       | the same, after `prod-audiotinkoff_bot` succeeds             |
+| `dev`                   | deployable pushes to `claude/*` branches; Run workflow → `dev` on any branch |
+
+A push is deployable when it changes `tgcloud/`, `converter/`, `tgcloud.jsonc`,
+`vite.config.js`, `package.json`, `package-lock.json`, `scripts/gen-config.js` or the
+workflow (the `paths` filter in [`.github/workflows/tgcloud.yml`](.github/workflows/tgcloud.yml)).
+Docs, tests, `.gitignore` or the restore scripts alone don't deploy. To redeploy without
+a code change (after editing an Environment's secrets or variables): Actions → tgcloud →
+Run workflow.
 
 To add a bot instance: create a `prod-<bot username>` Environment with the keys above, add
 it to the `deploy` job's matrix in [`.github/workflows/tgcloud.yml`](.github/workflows/tgcloud.yml),
@@ -110,8 +117,8 @@ safe schema changes. Pushing by hand deploys whatever `tgcloud/lib/config.js` ho
 
 GitHub Actions ([`.github/workflows/tgcloud.yml`](.github/workflows/tgcloud.yml)):
 
-- **On every push and pull request**, the `check` job runs Biome, `tsc`, Vitest with
-  coverage and the Converter build.
+- **On every pull request and every deployable push**, the `check` job runs Biome, `tsc`,
+  Vitest with coverage and the Converter build.
 - **Deploys** (see [Bot instances](#bot-instances)) generate the config, build the
   Converter, `tgcloud push --force`, apply safe schema changes with `tgcloud migrate --safe`,
   and fail if anything non-safe is left for a human to apply.

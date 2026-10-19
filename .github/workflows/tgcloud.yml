@@ -1,10 +1,30 @@
 name: tgcloud
 
 on:
+  # Only pushes that change what the deploy ships or uses: the bot's modules, the
+  # Converter and its build, dependencies, config generation, or this workflow. Docs,
+  # tests, .gitignore, the restore scripts etc. neither check nor deploy on push (their
+  # PRs are still checked).
   push:
+    paths:
+      - 'tgcloud/**'
+      - 'converter/**'
+      - 'tgcloud.jsonc'
+      - 'vite.config.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/gen-config.js'
+      - '.github/workflows/tgcloud.yml'
   pull_request:
-  # Deploy any branch to the dev bot by hand: Actions → tgcloud → Run workflow.
+  # Deploy by hand: Actions → tgcloud → Run workflow. Any branch can go to dev; only main
+  # can go to production (e.g. after changing an Environment's secrets or variables).
   workflow_dispatch:
+    inputs:
+      target:
+        description: Bot instances to deploy
+        type: choice
+        options: [dev, production]
+        default: dev
 
 permissions:
   contents: read
@@ -30,13 +50,14 @@ jobs:
 
   # Every bot instance is a GitHub Environment holding the same keys: secrets
   # TGCLOUD_TOKEN and ADMIN_ID, variable REQUIRE_APPROVAL (ADR-0003). The Converter's URL
-  # is derived from the token. Pushes to main deploy every production instance, one
-  # after the other, stopping at the first failure; pushes to claude/* branches and
-  # manual runs deploy the dev instance.
+  # is derived from the token. Pushes to main and manual production runs on main deploy
+  # every production instance, one after the other, stopping at the first failure;
+  # pushes to claude/* branches and manual dev runs deploy the dev instance.
   deploy:
     needs: [check]
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (inputs.target == 'dev' || github.ref == 'refs/heads/main')) ||
       (github.event_name == 'push' &&
        (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/claude/')))
     strategy:
@@ -44,7 +65,8 @@ jobs:
       fail-fast: true
       matrix:
         environment: >-
-          ${{ github.ref == 'refs/heads/main' && github.event_name == 'push'
+          ${{ github.ref == 'refs/heads/main'
+              && (github.event_name == 'push' || inputs.target == 'production')
               && fromJSON('["prod-audiotinkoff_bot", "prod-privatebot"]')
               || fromJSON('["dev"]') }}
     runs-on: ubuntu-latest
